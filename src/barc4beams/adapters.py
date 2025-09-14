@@ -67,7 +67,7 @@ def to_standard_beam(beam, code: Optional[str] = None) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported code: {code}")
 
-    schema.validate_beam(df, strict=False)
+    schema.validate_beam(df)
 
     return df
 
@@ -91,7 +91,7 @@ def merge_standard_beams(beams: List[pd.DataFrame]) -> pd.DataFrame:
         raise TypeError("merge_beams: all inputs must be pandas DataFrames")
 
     merged = pd.concat(beams, ignore_index=True, sort=False)
-    schema.validate_beam(merged, strict=False)
+    schema.validate_beam(merged)
 
     return merged
 
