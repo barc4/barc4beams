@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-misc.py — optical design and other auxiliary functions
+misc.py - optical design and other auxiliary functions
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ PLANCK = physical_constants["Planck constant"][0]
 LIGHT = physical_constants["speed of light in vacuum"][0]
 CHARGE = physical_constants["atomic unit of charge"][0]
 
-#***********************************************************************************
+# ---------------------------------------------------------------------------
 # energy/wavelength conversion
-#***********************************************************************************
+# ---------------------------------------------------------------------------
+
 _ENERGY_UNITS = {
     "ev": 1.0,
     "mev": 1e-3,

@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-adapters.py — conversion of external beam data (PyOptiX, SHADOW3, SHADOW4)
+adapters.py - conversion of external beam data (PyOptiX, SHADOW3, SHADOW4)
 into the standard beam schema.
 """
 

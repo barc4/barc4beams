@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-utils.py — 
+utils.py - general utility functions
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-io.py — saving and loading of standardised beams and stats.
+io.py - saving and loading of standardised beams and stats.
 """
 
 from __future__ import annotations
@@ -37,8 +37,6 @@ def save_beam(
     *,
     code: Optional[str] = None,
     overwrite: bool = True,
-    compression: str = "gzip",
-    compression_opts: int = 4,
     chunks: bool = True,
 ) -> None:
     """
@@ -56,10 +54,6 @@ def save_beam(
         Backend hint for conversion (passed to ``to_standard_beam``).
     overwrite : bool, optional
         If False and `path` exists, raise an error. Default is True.
-    compression : {'gzip','lzf', None}, optional
-        Dataset compression for numeric columns. Default 'gzip'.
-    compression_opts : int, optional
-        Compression level/options (only for some compressors). Default 4.
     chunks : bool, optional
         Enable chunked datasets (recommended). Default True.
 

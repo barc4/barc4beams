@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-parsing.py — 
+parsing.py - 
 """
 
 from __future__ import annotations
