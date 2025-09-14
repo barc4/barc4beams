@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-viz.py - plotting routines for beams and beamline layouts (SHADOW formats).
+viz.py - plotting routines for beams and beamline layouts.
 """
 
 from __future__ import annotations
@@ -138,6 +138,11 @@ def plot_divergence(
     -------
     fig : matplotlib.figure.Figure
     axes : tuple of Axes
+
+    Notes
+    -----
+    If ``direction='both'``, two panels (X–dX and Y–dY) are drawn side-by-side.
+    In this case, ``show_marginals`` is ignored.
     """
     if apply_style:
         start_plotting(k)
@@ -563,7 +568,6 @@ def start_plotting(k: float = 1.0) -> None:
     plt.rcParams.update({
         "axes.grid": False,
         "savefig.bbox": "tight",
-        "figure.dpi": 400,
         "axes.spines.right": True,
         "axes.spines.top":   True,
     })
@@ -586,7 +590,7 @@ def plotting_style(k: float = 1.0):
         plt.rcParams.update(old)
 
 # ---------------------------------------------------------------------------
-# private engnine
+# private engine
 # ---------------------------------------------------------------------------
 
 def _prep_beam_xy(
