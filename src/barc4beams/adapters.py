@@ -91,6 +91,8 @@ def merge_standard_beams(beams: List[pd.DataFrame]) -> pd.DataFrame:
         raise TypeError("merge_beams: all inputs must be pandas DataFrames")
 
     merged = pd.concat(beams, ignore_index=True, sort=False)
+    schema.validate_beam(merged, strict=False)
+
     return merged
 
 # ---------------------------------------------------------------------------
