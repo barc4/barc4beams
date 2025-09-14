@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-misc.py - optical design and other auxiliary functions
+misc.py - optical design and other auxiliary functions.
 """
 
 from __future__ import annotations
