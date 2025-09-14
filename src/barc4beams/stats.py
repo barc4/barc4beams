@@ -155,8 +155,9 @@ def get_statistics(
             return f"{v_rounded:.{max(dec,0)}f} +- {u_rounded:.{max(dec,0)}f}{unit}"
 
         t_mean, t_std = result["meta"]["transmission"]
-        print(f"{n_reps} x {n_rays} rays "
-              f"(transmission: {fmt_with_unc(t_mean/100, t_std/100, scale=100, unit='%')})")
+        print(f"\n\n{n_reps} x {n_rays} rays ")
+        print(f"> good rays: {fmt_with_unc(good_mean/n_rays, good_std/n_rays, scale=100, unit='%')}")
+        print(f"> intensity transmission: {fmt_with_unc(t_mean/100, t_std/100, scale=100, unit='%')}\n")
 
         if "energy" in result:
             e = result["energy"]
@@ -176,10 +177,6 @@ def get_statistics(
             if key_f in result:
                 f_mean, f_std = result[key_f]
                 print(f"> Beam focusing at {fmt_with_unc(f_mean, f_std, unit=' m')}")
-                # if f_std < 1e-6:
-                #     print(f"> Beam focusing at {f_mean:.6g} m")
-                # else:
-                #     print(f"> Beam focusing at {f_mean:.6g} +- {f_std:.3g} m")
 
             stats_axis = result[axis]
             stats_div  = result["dX" if axis == "X" else "dY"]
@@ -187,8 +184,8 @@ def get_statistics(
 
             print(f">> RMS beam size: "
                   f"{fmt_with_unc(stats_axis['std'][0], stats_axis['std'][1], scale=1e6, unit=' um')} "
-                  f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' um')})"
-                  f"(1/e2: {fmt_with_unc(stats_axis['e2'][0], stats_axis['e2'][1], scale=1e6, unit=' um')})")
+                  f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' um')})")
+                #   f"1/e2: {fmt_with_unc(stats_axis['e2'][0], stats_axis['e2'][1], scale=1e6, unit=' um')})")
             print(f">>> Centroid: {fmt_with_unc(cen_mean, cen_std, scale=1e6, unit=' um')}")
             print(f">> Divergence: "
                   f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' urad')} "
