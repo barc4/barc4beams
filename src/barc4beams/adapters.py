@@ -99,6 +99,34 @@ def merge_standard_beams(beams: List[pd.DataFrame]) -> pd.DataFrame:
 # internal helpers
 # ---------------------------------------------------------------------------
 
+_CANONICAL_ORDER = [
+    "energy", "X", "Y", "Z", "dX", "dY", "dZ",
+    "wavelength", "intensity", "intensity_s-pol",
+    "intensity_p-pol", "lost_ray_flag",
+]
+
+def _enforce_beam_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enforce the standard dtypes:
+      - float64 for all physical quantities
+      - uint8 for lost_ray_flag (0 alive, 1 lost)
+    """
+    float_cols = [
+        "energy", "X", "Y", "Z", "dX", "dY", "dZ",
+        "wavelength", "intensity", "intensity_s-pol", "intensity_p-pol",
+    ]
+    for col in float_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype(np.float64, copy=False)
+
+    if "lost_ray_flag" in df.columns:
+        s = pd.to_numeric(df["lost_ray_flag"], errors="coerce")
+        df["lost_ray_flag"] = s.fillna(0).astype(np.uint8, copy=False)
+
+    ordered = [c for c in _CANONICAL_ORDER if c in df.columns]
+    extras = [c for c in df.columns if c not in ordered]
+    return df[ordered + extras]
+
 def _detect_backend(beam) -> str:
     """Heuristic backend detection."""
     if isinstance(beam, pd.DataFrame):
@@ -113,14 +141,19 @@ def _detect_backend(beam) -> str:
 def _from_pyoptix(df: pd.DataFrame) -> pd.DataFrame:
     """Adapt a PyOptiX beam (already tabular). Assumes columns close to standard."""
     out = df.copy()
-    df["intensity"] = np.clip(df["intensity"].to_numpy(), 0.0, 1.0) 
+
+    out["intensity"] = np.clip(out["intensity"].to_numpy(), 0.0, 1.0)
+
     out.insert(0, "energy", misc.energy_wavelength(out["wavelength"], "m"))
+
     if "intensity_s-pol" not in out.columns:
         out["intensity_s-pol"] = out["intensity"]
     if "intensity_p-pol" not in out.columns:
         out["intensity_p-pol"] = out["intensity"]
-    out["lost_ray_flag"] = (out["intensity"].to_numpy() == 0.0).astype(int)
-    return out
+
+    out["lost_ray_flag"] = (out["intensity"].to_numpy() == 0.0).astype(np.uint8)
+
+    return _enforce_beam_dtypes(out)
 
 def _from_shadow3(beam) -> pd.DataFrame:
     """Adapt a SHADOW3 beam object to the standard schema."""
@@ -161,26 +194,24 @@ def _from_shadow(beam, cols, getter_name: str) -> pd.DataFrame:
     getter = getattr(beam, getter_name, None)
     if getter is None:
         raise AttributeError(f"Shadow beam must provide .{getter_name}(indices).")
-
+    
     data = np.asarray(getter(cols)).T
     headers = [
-        "energy",
-        "X", "Y", "Z",
-        "dX", "dY", "dZ",
-        "wavelength",
-        "intensity",
-        "intensity_s-pol",
-        "intensity_p-pol",
-        "lost_ray_flag",
+        "energy", "X", "Y", "Z", "dX", "dY", "dZ",
+        "wavelength", "intensity", "intensity_s-pol",
+        "intensity_p-pol", "lost_ray_flag",
     ]
+
     df = pd.DataFrame(data, columns=headers)
 
+    df["wavelength"] *=  1e-10
+
     raw = pd.to_numeric(df["lost_ray_flag"], errors="coerce")
-    df["lost_ray_flag"] = (raw == -1).astype(int)
+    df["lost_ray_flag"] = (raw == -1).astype(np.uint8)
 
     lost = df["lost_ray_flag"] == 1
     for col in ("intensity", "intensity_s-pol", "intensity_p-pol"):
         df.loc[lost, col] = 0.0
-    df["intensity"] = np.minimum(pd.to_numeric(df["intensity"], errors="coerce"), 1.0)
+    df["intensity"] = np.minimum(df["intensity"].to_numpy(), 1.0)
 
-    return df
+    return _enforce_beam_dtypes(df)

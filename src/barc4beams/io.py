@@ -100,8 +100,9 @@ def save_beam(
                 ds.attrs["units"] = _DEFAULT_UNITS[col]
 
         units_map = {c: _DEFAULT_UNITS.get(c, "") for c in numeric_cols}
-        g.attrs["units"] = str(units_map)
-        # g.attrs["units_json"] = json.dumps(units_map)
+        # g.attrs["units"] = str(units_map)
+        g.attrs["units_json"] = json.dumps(units_map)
+        g.attrs["column_order"] = json.dumps(numeric_cols)
 
 def read_beam(path: str) -> pd.DataFrame:
     """
@@ -128,6 +129,12 @@ def read_beam(path: str) -> pd.DataFrame:
         if "beam" not in h5:
             raise KeyError("HDF5 file missing group '/beam'.")
         g = h5["beam"]
+        order = None
+        if "column_order" in g.attrs:
+            try:
+                order = json.loads(g.attrs["column_order"])
+            except Exception:
+                order = None
         data = {}
         for col in g.keys():
             arr = g[col][()]
@@ -136,6 +143,16 @@ def read_beam(path: str) -> pd.DataFrame:
             else:
                 data[col] = np.asarray(arr, dtype=np.float64)
         df = pd.DataFrame(data)
+        if order is None:
+            canonical = [
+                "energy", "X", "Y", "Z", "dX", "dY", "dZ",
+                "wavelength", "intensity", "intensity_s-pol",
+                "intensity_p-pol", "lost_ray_flag",
+            ]
+            order = [c for c in canonical if c in df.columns] + \
+                    [c for c in df.columns if c not in canonical]
+
+        df = df[order]
     schema.validate_beam(df)
     return df
 
