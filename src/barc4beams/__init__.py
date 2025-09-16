@@ -16,6 +16,8 @@ from .viz import (
     plot_beamline,
     plot_beamline_configs,
     plot_divergence,
+    plot_energy,
+    plot_energy_vs_intensity,
     plot_phase_space,
 )
 
@@ -30,6 +32,8 @@ __all__ = [
     "plot",
     "plot_beam",
     "plot_divergence",
+    "plot_energy",
+    "plot_energy_vs_intensity",
     "plot_phase_space",
     "plot_beamline",
     "plot_beamline_configs",

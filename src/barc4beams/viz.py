@@ -25,7 +25,7 @@ from . import stats
 Number = Union[int, float]
 RangeT = Optional[Tuple[Optional[Number], Optional[Number]]]
 BinsT  = Optional[Union[int, Tuple[int, int]]]
-ModeT  = Union[Literal["scatter", "histo2d"], str]
+ModeT  = Union[Literal["scatter", "hist2d"], str]
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -156,7 +156,6 @@ def plot_divergence(
         plt.show()
     return fig, axes
 
-
 def plot_phase_space(
     df: pd.DataFrame,
     *,
@@ -220,6 +219,121 @@ def plot_phase_space(
         return (fig_x, axes_x), (fig_y, axes_y)
 
     fig, axes = _one(dnorm, path)
+    if plot:
+        plt.show()
+    return fig, axes
+
+def plot_energy(
+    df: pd.DataFrame,
+    *,
+    bins: Optional[Union[int, Tuple[int, int]]] = None,   # int → auto for X; tuple ignored (kept for symmetry)
+    bin_width: Optional[Number] = None,
+    bin_method: int = 0,
+    dpi: int = 300,
+    path: Optional[str] = None,
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True,
+) -> Tuple[plt.Figure, plt.Axes]:
+    """Energy distribution N vs E (eV), 1D histogram in counts."""
+    if apply_style:
+        start_plotting(k)
+
+    # filter alive rays
+    df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
+    e = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)
+    e = e[np.isfinite(e)]
+    if e.size == 0:
+        fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=dpi)
+        ax.set_xlabel("Energy [eV]")
+        ax.set_ylabel("[counts]")
+        ax.text(0.5, 0.5, "no finite energies", ha="center", va="center", transform=ax.transAxes)
+        if path:
+            fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        if plot:
+            plt.show()
+        return fig, ax
+
+    # binning
+    nbx, _ = _auto_bins(e, e, bins, bin_width, bin_method)
+    xr = _resolve_range(e, None)
+
+    # compute histogram
+    counts, edges = np.histogram(e, bins=nbx, range=xr)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=dpi)
+
+    # filled area
+    ax.fill_between(centers, 0, counts, step="mid", color="steelblue", alpha=0.5)
+
+    # crisp outline
+    ax.step(edges[:-1], counts, where="post", color="steelblue", linewidth=1.0)
+
+    ax.set_xlim(xr)
+    ax.set_ylim(0, 1.05 * max(1, counts.max()))
+    ax.grid(which="major", linestyle="--", linewidth=0.3, color="dimgrey")
+    ax.grid(which="minor", linestyle="--", linewidth=0.3, color="lightgrey")
+    ax.set_xlabel("Energy [eV]")
+    ax.set_ylabel("[rays]")
+    ax.locator_params(nbins=5)
+
+    if path:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    if plot:
+        plt.show()
+    return fig, ax
+
+def plot_energy_vs_intensity(
+    df: pd.DataFrame,
+    *,
+    mode: str = "scatter",              # 'scatter' | 'histo2d' (aliases accepted)
+    aspect_ratio: bool = False,         # default False: ranges are typically very unequal
+    color: Optional[int] = 2,
+    x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
+    y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
+    bins: BinsT = None,
+    bin_width: Optional[Number] = None,
+    bin_method: int = 0,
+    dpi: int = 300,
+    path: Optional[str] = None,
+    showXhist: bool = True,
+    showYhist: bool = True,
+    envelope: bool = False,              # envelope is meaningful on Energy; on Intensity it's bounded in [0,1]
+    envelope_method: str = "edgeworth",
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True,
+) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
+    """2D plot with X=Energy [eV], Y=Intensity [arb], with optional marginals/envelopes; never silently shows."""
+    if apply_style:
+        start_plotting(k)
+
+    # alive rays only
+    df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
+    x = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)         # eV
+    y = pd.to_numeric(df2["intensity"], errors="coerce").to_numpy(dtype=float)      # [0,1]
+    # labels
+    xl = r"$E$ [eV]"
+    yl = r"$I$ [arb]"
+    print(_resolve_mode(mode))
+    fig, axes = _common_xy_plot(
+        x, y, xl, yl,
+        mode=_resolve_mode(mode),
+        aspect_ratio=aspect_ratio,
+        color=color,
+        x_range=x_range,
+        y_range=y_range,
+        bins=bins,
+        bin_width=bin_width,
+        bin_method=bin_method,
+        dpi=dpi,
+        path=path,
+        showXhist=showXhist,
+        showYhist=showYhist,
+        envelope=False,
+        envelope_method=envelope_method,
+    )
     if plot:
         plt.show()
     return fig, axes
@@ -647,7 +761,7 @@ def _common_xy_plot(
         ax_histx.locator_params(tight=True, nbins=3)
         ax_histx.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histx.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
-        ax_histx.set_ylabel('[counts]', fontsize='medium')
+        ax_histx.set_ylabel('[rays]', fontsize='medium')
         if envelope:
             _overlay_envelope_on_hist(ax_histx, x, x_range, nb_of_bins[0],
                                       horizontal=False,
@@ -666,7 +780,7 @@ def _common_xy_plot(
         ax_histy.locator_params(tight=True, nbins=3)
         ax_histy.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histy.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
-        ax_histy.set_xlabel('[counts]', fontsize='medium')
+        ax_histy.set_xlabel('[rays]', fontsize='medium')
         if envelope:
             _overlay_envelope_on_hist(ax_histy, y, y_range, nb_of_bins[1],
                                       horizontal=True,
@@ -740,18 +854,18 @@ def _prep_beam_xy(
 # utilities
 # ---------------------------------------------------------------------------
 
-def _resolve_mode(mode: ModeT) -> Literal["scatter", "histo2d"]:
-    """Normalize plotting mode/aliases and fallback to 'histo2d' with a warning."""
+def _resolve_mode(mode: ModeT) -> Literal["scatter", "hist2d"]:
+    """Normalize plotting mode/aliases and fallback to 'hist2d' with a warning."""
     if not isinstance(mode, str):
-        warnings.warn(f"Plot mode {mode!r} not recognized (not a string). Falling back to 'histo2d'.")
-        return "histo2d"
+        warnings.warn(f"Plot mode {mode!r} not recognized (not a string). Falling back to 'hist2d'.")
+        return "hist2d"
     m = mode.strip().lower()
     if m == "scatter" or m.startswith("s"):
         return "scatter"
     if m in {"histo", "hist2d", "histogram"} or m.startswith("h"):
-        return "histo2d"
-    warnings.warn(f"Plot mode {mode!r} not recognized. Falling back to 'histo2d'.")
-    return "histo2d"
+        return "hist2d"
+    warnings.warn(f"Plot mode {mode!r} not recognized. Falling back to 'hist2d'.")
+    return "hist2d"
 
 def _resolve_range(arr: np.ndarray, xr: RangeT) -> Tuple[float, float]:
     """Resolve (min,max) range with finite-data auto and 2% padding (safe for constant/empty arrays)."""
@@ -780,7 +894,7 @@ def _auto_bins(
     """Choose (nx, ny) bins via user value, width, or rule (sqrt/Sturges/Rice/Doane"""
 
     if bins is not None:
-        return bins
+        return [bins, bins]
 
     bins = []
 
