@@ -11,6 +11,7 @@ from .beam import Beam
 from .io import read_beam, read_json_stats, save_beam, save_json_stats
 from .stats import calc_envelope_from_moments, get_focal_distance, get_statistics
 from .viz import (
+    plot,
     plot_beam,
     plot_beamline,
     plot_beamline_configs,
@@ -26,6 +27,7 @@ __all__ = [
     "get_statistics",
     "get_focal_distance",
     "calc_envelope_from_moments",
+    "plot",
     "plot_beam",
     "plot_divergence",
     "plot_phase_space",

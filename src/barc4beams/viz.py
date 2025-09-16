@@ -7,152 +7,154 @@ viz.py - plotting routines for beams and beamline layouts.
 
 from __future__ import annotations
 
+import warnings
 from contextlib import contextmanager
 from itertools import cycle
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Literal, Optional, Sequence, Tuple, Union
 
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import rcParamsDefault
-from matplotlib.gridspec import GridSpec
+from matplotlib.colors import Colormap
+from scipy.stats import gaussian_kde, moment
+
+from . import stats
 
 Number = Union[int, float]
-BinsT = Union[int, Tuple[int, int], None]
+RangeT = Optional[Tuple[Optional[Number], Optional[Number]]]
+BinsT  = Optional[Union[int, Tuple[int, int]]]
+ModeT  = Union[Literal["scatter", "histo2d"], str]
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def plot() -> None:
+    """Show all pending figures."""
+    plt.show()
 
 def plot_beam(
     df: pd.DataFrame,
     *,
     mode: str = "scatter",
     aspect_ratio: bool = True,
-    color_scheme: Optional[Union[int, str]] = None,
-    x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
-    y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
-    bins: BinsT = None,
-    show_marginals: bool = True,
+    color = 1,
+    x_range = None,
+    y_range = None,
+    bins = None,
+    bin_width = None,
+    bin_method = 0,
     dpi: int = 300,
-    save: Optional[str] = None,
+    path: Optional[str] = None,
+    showXhist=True,
+    showYhist=True,
+    envelope=True,
+    envelope_method="edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
-    **kwargs,
+    plot: bool = True
 ):
     """
-    Plot the spatial footprint of a standardized beam (X vs Y).
+    Plot the spatial footprint of a standardized beam (X vs Y), with optional marginals
+    and moment-matched envelope overlays.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        Standardized beam (from ``to_standard_beam``). Rays with
-        ``lost_ray_flag==1`` are filtered out.
-    mode : {'scatter', 'hist2d'}, optional
-        Plot style: scatter plot of points, or 2D histogram. Default 'scatter'.
-    aspect_ratio : bool, optional
-        If True (default), enforce equal aspect ratio.
-    color_scheme : int or str, optional
-        Colormap to use. Integer values are mapped to default palettes,
-        or pass a valid Matplotlib colormap name.
-    x_range, y_range : tuple(float,float), optional
-        Axis limits. If None, autoscale with padding.
-    bins : int or (int,int), optional
-        Number of bins for hist2d. If None, auto-chosen.
-    show_marginals : bool, optional
-        If True (default), show 1D histograms on top and right.
-    dpi : int, optional
-        Figure DPI (export resolution). Default 300.
-    save : str, optional
-        If provided, save the figure to this path.
-    apply_style : bool, optional
-        If True (default), apply :func:`start_plotting(k)` to set fonts/sizes.
-    k : float, optional
-        Font scaling factor for :func:`start_plotting`. Default 1.0.
-    **kwargs
-        Passed to the scatter routine (e.g. `s`, `alpha`).
+        Standardized beam with columns: 'X','Y','dX','dY','lost_ray_flag' (0=alive).
+        Units expected in meters (pos) and radians (angles). This function scales to µm/µrad.
+    mode : {'scatter','histo2d', ...}, default 'scatter'
+        Plot style. Aliases like 's'/'h' are accepted and normalized.
+    aspect_ratio : bool, default True
+        If True, main axes uses equal aspect.
+    color : int or None, default 1
+        Legacy color scheme index. 0/None → monochrome points; 1..4 → colormaps.
+    x_range, y_range : (min, max) or None
+        Data limits. If None/partial, auto-detected with a small padding.
+    bins : int or (x_bins, y_bins) or None
+        Histogram binning for the marginals and hist2d. Auto if None.
+    bin_width : float or None
+        If given, overrides bin count as ceil(range/bin_width).
+    bin_method : int, default 0
+        Auto-binning rule: 0=sqrt, 1=Sturges, 2=Rice, 3=Doane.
+    dpi : int, default 300
+    path : str or None
+        If provided, the figure is saved.
+    showXhist, showYhist : bool, default True
+        Whether to show X/Y marginals.
+    envelope : bool, default True
+        Overlay envelope curve on the 1D marginals using moments from the data.
+    envelope_method : {'edgeworth','pearson','maxent'}, default 'edgeworth'
+        Reconstruction method passed to `stats.calc_envelope_from_moments`.
+    apply_style : bool, default True
+        Call `start_plotting(k)` before plotting.
+    k : float, default 1.0
+        Global style scale factor.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
-    axes : tuple of Axes
+    fig, (ax_image, ax_histx, ax_histy)
+        The Matplotlib figure and axes.
     """
+
     if apply_style:
         start_plotting(k)
 
     x, y, xl, yl = _prep_beam_xy(df, kind="size")
-    return _common_xy_plot(
-        x, y, xl, yl, mode=mode, aspect_ratio=aspect_ratio,
-        color_scheme=color_scheme, x_range=x_range, y_range=y_range,
-        bins=bins, show_marginals=show_marginals, dpi=dpi, save=save, **kwargs
+    fig, axes = _common_xy_plot(
+        x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+        x_range, y_range, bins, bin_width, bin_method, dpi, path,
+        showXhist, showYhist, envelope, envelope_method
     )
+    if plot:
+        plt.show()
 
+    return fig, axes
 
 def plot_divergence(
     df: pd.DataFrame,
     *,
     mode: str = "scatter",
     aspect_ratio: bool = True,
-    color_scheme: Optional[Union[int, str]] = None,
-    x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
-    y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
-    bins: BinsT = None,
-    show_marginals: bool = True,
+    color = 1,
+    x_range = None,
+    y_range = None,
+    bins = None,
+    bin_width = None,
+    bin_method = 0,
     dpi: int = 300,
-    save: Optional[str] = None,
+    path: Optional[str] = None,
+    showXhist=True,
+    showYhist=True,
+    envelope=True,
+    envelope_method="edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
-    **kwargs,
+    plot: bool = True
+
 ):
     """
-    Plot the angular footprint of a standardized beam (dX vs dY).
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Standardized beam. Filters ``lost_ray_flag==1``.
-    mode : {'scatter', 'hist2d'}, optional
-        Plot style. Default 'scatter'.
-    aspect_ratio : bool, optional
-        If True (default), enforce equal aspect ratio.
-    color_scheme : int or str, optional
-        Colormap to use.
-    x_range, y_range : tuple(float,float), optional
-        Axis limits. If None, autoscale with padding.
-    bins : int or (int,int), optional
-        Number of bins for hist2d. Auto if None.
-    show_marginals : bool, optional
-        Show 1D histograms (default True).
-    dpi : int, optional
-        Figure DPI. Default 300.
-    save : str, optional
-        Save figure to this path.
-    apply_style : bool, optional
-        Apply :func:`start_plotting(k)` if True. Default True.
-    k : float, optional
-        Font scaling factor for :func:`start_plotting`. Default 1.0.
-    **kwargs
-        Extra scatter options.
+    Plot the beam divergence (dX vs dY) in µrad with optional marginals and envelopes.
+    (See `plot_beam` for parameter semantics.)
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
-    axes : tuple of Axes
-
-    Notes
-    -----
-    If ``direction='both'``, two panels (X–dX and Y–dY) are drawn side-by-side.
-    In this case, ``show_marginals`` is ignored.
+    fig, (ax_image, ax_histx, ax_histy)
     """
     if apply_style:
         start_plotting(k)
 
     x, y, xl, yl = _prep_beam_xy(df, kind="div")
-    return _common_xy_plot(
-        x, y, xl, yl, mode=mode, aspect_ratio=aspect_ratio,
-        color_scheme=color_scheme, x_range=x_range, y_range=y_range,
-        bins=bins, show_marginals=show_marginals, dpi=dpi, save=save, **kwargs
+    fig, axes = _common_xy_plot(
+        x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+        x_range, y_range, bins, bin_width, bin_method, dpi, path,
+        showXhist, showYhist, envelope, envelope_method
     )
+    if plot:
+        plt.show()
+    return fig, axes
 
 
 def plot_phase_space(
@@ -161,93 +163,66 @@ def plot_phase_space(
     direction: str = "both",
     mode: str = "scatter",
     aspect_ratio: bool = True,
-    color_scheme: Optional[Union[int, str]] = None,
-    x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
-    y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
-    bins: BinsT = None,
-    show_marginals: bool = True,
+    color = 1,
+    x_range = None,
+    y_range = None,
+    bins = None,
+    bin_width = None,
+    bin_method = 0,
     dpi: int = 300,
-    save: Optional[str] = None,
+    path: Optional[str] = None,
+    showXhist=True,
+    showYhist=True,
+    envelope=True,
+    envelope_method="edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
-    **kwargs,
+    plot: bool = True
+
 ):
     """
-    Plot the phase space of a standardized beam (X vs dX or Y vs dY).
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Standardized beam. Filters ``lost_ray_flag==1``.
-    direction : {'x','y','both'}, optional
-        Axis to plot. 'both' plots X–dX and Y–dY side-by-side. Default 'both'.
-    mode : {'scatter', 'hist2d'}, optional
-        Plot style. Default 'scatter'.
-    aspect_ratio : bool, optional
-        Equal aspect ratio if True (default).
-    color_scheme : int or str, optional
-        Colormap.
-    x_range, y_range : tuple(float,float), optional
-        Axis limits. If None, autoscale.
-    bins : int or (int,int), optional
-        Bins for hist2d. Auto if None.
-    show_marginals : bool, optional
-        Show 1D histograms (default True).
-    dpi : int, optional
-        Figure DPI. Default 300.
-    save : str, optional
-        Save figure to this path.
-    apply_style : bool, optional
-        Apply :func:`start_plotting(k)` if True. Default True.
-    k : float, optional
-        Font scaling factor for :func:`start_plotting`. Default 1.0.
-    **kwargs
-        Extra scatter args.
+    Plot phase space for one or both planes: (X vs dX) and/or (Y vs dY), in µm/µrad.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
-    axes : tuple of Axes
+    (fig_x, axes_x), (fig_y, axes_y)  if direction='both'
+    or
+    fig, (ax_image, ax_histx, ax_histy)
     """
     if apply_style:
         start_plotting(k)
 
-    direction = (direction or "both").lower()
-    if direction not in {"x", "y", "both"}:
-        raise ValueError("direction must be 'x', 'y', or 'both'.")
+    dnorm = str(direction).strip().lower()
+    if dnorm not in {"x", "y", "both"}:
+        import warnings
+        warnings.warn(f"direction {direction!r} not recognized. Falling back to 'both'.")
+        dnorm = "both"
 
-    if direction in {"x", "y"}:
-        x, y, xl, yl = _prep_beam_xy(df, kind="ps", direction=direction)
+    def _suffix(base: Optional[str], suf: str) -> Optional[str]:
+        if not base:
+            return None
+        stem, ext = (base.rsplit(".", 1) + ["png"])[:2]
+        return f"{stem}{suf}.{ext}"
+
+    def _one(d: str, save_path: Optional[str]):
+        x, y, xl, yl = _prep_beam_xy(df, kind="ps", direction=d)
         return _common_xy_plot(
-            x, y, xl, yl, mode=mode, aspect_ratio=aspect_ratio,
-            color_scheme=color_scheme, x_range=x_range, y_range=y_range,
-            bins=bins, show_marginals=show_marginals, dpi=dpi, save=save, **kwargs
+            x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+            x_range, y_range, bins, bin_width, bin_method, dpi, save_path,
+            showXhist, showYhist, envelope, envelope_method
         )
 
-    # two-panel layout (X–dX, Y–dY)
-    x1, y1, xl1, yl1 = _prep_beam_xy(df, kind="ps", direction="x")
-    x2, y2, xl2, yl2 = _prep_beam_xy(df, kind="ps", direction="y")
+    if dnorm == "both":
+        fig_x, axes_x = _one("x", _suffix(path, "_x_dx"))
+        fig_y, axes_y = _one("y", _suffix(path, "_y_dy"))
+        if plot:
+            plt.show()
+        return (fig_x, axes_x), (fig_y, axes_y)
 
-    fig = plt.figure(figsize=(10, 4), dpi=dpi)
-    gs = GridSpec(1, 2, width_ratios=[1, 1], wspace=0.25, figure=fig)
-
-    ax_main_left = fig.add_subplot(gs[0, 0])
-    _draw_xy(
-        ax_main_left, x1, y1, xl1, yl1, mode=mode, color_scheme=color_scheme,
-        x_range=x_range, y_range=y_range, bins=bins, show_marginals=show_marginals,
-        aspect_ratio=aspect_ratio, **kwargs
-    )
-
-    ax_main_right = fig.add_subplot(gs[0, 1])
-    _draw_xy(
-        ax_main_right, x2, y2, xl2, yl2, mode=mode, color_scheme=color_scheme,
-        x_range=x_range, y_range=y_range, bins=bins, show_marginals=show_marginals,
-        aspect_ratio=aspect_ratio, **kwargs
-    )
-
-    if save:
-        fig.savefig(save, dpi=dpi, bbox_inches="tight")
-    return fig, (ax_main_left, ax_main_right)
+    fig, axes = _one(dnorm, path)
+    if plot:
+        plt.show()
+    return fig, axes
 
 def plot_beamline(shadow_info: Dict,
                   show_source: bool = True,
@@ -572,6 +547,7 @@ def start_plotting(k: float = 1.0) -> None:
         "axes.spines.top":   True,
     })
 
+    
 @contextmanager
 def plotting_style(k: float = 1.0):
     """
@@ -593,14 +569,144 @@ def plotting_style(k: float = 1.0):
 # private engine
 # ---------------------------------------------------------------------------
 
+def _common_xy_plot(
+    x: np.ndarray,
+    y: np.ndarray,
+    x_label: str,
+    y_label: str,
+    mode: ModeT,
+    aspect_ratio: bool,
+    color: Optional[int],
+    x_range: RangeT,
+    y_range: RangeT,
+    bins: BinsT,
+    bin_width: Optional[Number],
+    bin_method: int,
+    dpi: int,
+    path: Optional[str],
+    showXhist: bool = True,
+    showYhist: bool = True,
+    envelope: bool = True,
+    envelope_method: Literal["edgeworth", "pearson", "maxent"] = "edgeworth",
+) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
+    """Build core XY figure with central scatter/hist2d and optional 1D marginals/envelopes."""
+
+    x_range = _resolve_range(x, x_range)
+    y_range = _resolve_range(y, y_range)
+
+    nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
+
+    # --- figure & rectangles (your math, lightly tidied) ---
+    m, n = 6.4, 6.4 if aspect_ratio else (6.4, 4.8)
+    dx = x_range[1] - x_range[0]
+    dy = y_range[1] - y_range[0]
+    left, bottom, spacing = 0.20, 0.10, 0.02
+    spacing_x, spacing_y = spacing, spacing
+    kx = ky = k = 0.25
+
+    if dx >= dy:
+        width = 0.50
+        height = width * dy / dx
+        spacing_y = spacing * dy / dx
+        ky = k * dy / dx
+    else:
+        height = 0.50
+        width = height * dx / dy
+        spacing_x = spacing * dx / dy
+        kx = k * dx / dy
+
+    rect_image = [left, bottom, width, height]
+    rect_histx = [left, bottom + height + spacing_y + 0.02, width, kx * 0.9]
+    rect_histy = [left + width + spacing_x + 0.02, bottom, ky * 0.9, height]
+
+    fig = plt.figure(figsize=(m, n), dpi=dpi)
+    ax_image = fig.add_axes(rect_image)
+    ax_image.tick_params(top=False, right=False)
+    ax_image.set_xlabel(x_label)
+    ax_image.set_ylabel(y_label)
+
+    # --- histograms ---
+    ax_histx = ax_histy = None
+    if showXhist:
+        ax_histx = fig.add_axes(rect_histx, sharex=ax_image)
+        ax_histx.tick_params(direction='in', which='both', labelbottom=False, top=True, right=True, colors='black')
+        for sp in ('bottom', 'top', 'right', 'left'):
+            ax_histx.spines[sp].set_color('black')
+        ax_histx.hist(x, bins=nb_of_bins[0], color='steelblue', linewidth=1,
+                      edgecolor='steelblue', histtype='step', alpha=1)
+        ax_histx.set_xlim(x_range)
+        # simple autoscale, capped for aesthetics
+        hx, _ = np.histogram(x, nb_of_bins[0])
+        ax_histx.set_ylim(-0.05 * hx.max(), 1.05 * hx.max())
+        ax_histx.locator_params(tight=True, nbins=3)
+        ax_histx.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
+        ax_histx.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
+        ax_histx.set_ylabel('[counts]', fontsize='medium')
+        if envelope:
+            _overlay_envelope_on_hist(ax_histx, x, x_range, nb_of_bins[0],
+                                      horizontal=False,
+                                      method=envelope_method)
+            
+    if showYhist:
+        ax_histy = fig.add_axes(rect_histy, sharey=ax_image)
+        ax_histy.tick_params(direction='in', which='both', labelleft=False, top=True, right=True, colors='black')
+        for sp in ('bottom', 'top', 'right', 'left'):
+            ax_histy.spines[sp].set_color('black')
+        ax_histy.hist(y, bins=nb_of_bins[1], orientation='horizontal', color='steelblue',
+                      linewidth=1, edgecolor='steelblue', histtype='step', alpha=1)
+        ax_histy.set_ylim(y_range)
+        hy, _ = np.histogram(y, nb_of_bins[1])
+        ax_histy.set_xlim(-0.05 * hy.max(), 1.05 * hy.max())
+        ax_histy.locator_params(tight=True, nbins=3)
+        ax_histy.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
+        ax_histy.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
+        ax_histy.set_xlabel('[counts]', fontsize='medium')
+        if envelope:
+            _overlay_envelope_on_hist(ax_histy, y, y_range, nb_of_bins[1],
+                                      horizontal=True,
+                                      method=envelope_method)
+    # --- main scatter / hist2d ---
+    ax_image.set_xlim(x_range)
+    ax_image.set_ylim(y_range)
+
+    if mode == 'scatter':
+        s, edgecolors, marker, linewidths = 1, 'face', '.', 0.1
+        if color is None or color == 0:
+            im = ax_image.scatter(x, y, color=_color_palette(0), alpha=1,
+                                  edgecolors=edgecolors, s=s, marker=marker, linewidths=linewidths)
+        else:
+            xy = np.vstack([x, y])
+            z = gaussian_kde(xy)(xy)
+            z = z / z.max()
+            cmap = _color_palette(color)
+            clr = cmap(z)
+            im = ax_image.scatter(x, y, color=clr, alpha=1, edgecolors=edgecolors,
+                                  s=s, marker=marker, linewidths=linewidths * 2)
+        ax_image.grid(linestyle='--', linewidth=0.3, color='dimgrey')
+
+    elif mode == 'hist2d':
+        nbx, nby = nb_of_bins if isinstance(nb_of_bins, (tuple, list)) else (nb_of_bins, nb_of_bins)
+        im = ax_image.hist2d(x, y, bins=[nbx, nby], cmap=_color_palette(color or 2))
+    else:
+        raise ValueError("mode must be 'scatter' or 'hist2d'.")
+
+    # ticks/aspect
+    ax_image.locator_params(tight=True, nbins=4)
+    ax_image.set_aspect('equal' if aspect_ratio else 'auto')
+
+    if path is not None:
+        fig.savefig(path, dpi=dpi, bbox_inches='tight')
+    # plt.show()
+    return fig, (ax_image, ax_histx, ax_histy)
+
 def _prep_beam_xy(
     df: pd.DataFrame,
     *,
-    kind: str,                   # 'size' | 'div' | 'ps'
-    direction: Optional[str] = None,  # for kind='ps'
+    kind: str,       
+    direction: Optional[str] = None,
 ):
     """Return (x, y, x_label, y_label) arrays scaled to µm or µrad, filtering alive rays."""
-    # Filter alive rays (0 = alive, 1 = lost)
+
     if "lost_ray_flag" in df.columns:
         df = df.loc[df["lost_ray_flag"] == 0]
 
@@ -624,186 +730,120 @@ def _prep_beam_xy(
 
     raise ValueError("kind must be one of {'size','div','ps'}.")
 
-
-def _common_xy_plot(
-    x: np.ndarray,
-    y: np.ndarray,
-    x_label: str,
-    y_label: str,
-    *,
-    mode: str,
-    aspect_ratio: bool,
-    color_scheme: Optional[Union[int, str]],
-    x_range: Optional[Tuple[Optional[Number], Optional[Number]]],
-    y_range: Optional[Tuple[Optional[Number], Optional[Number]]],
-    bins: BinsT,
-    show_marginals: bool,
-    dpi: int,
-    save: Optional[str],
-    **kwargs,
-):
-    """Common 2D plot builder with optional marginals."""
-    fig = plt.figure(figsize=(5.5, 5.0), dpi=dpi)
-
-    if show_marginals:
-        # Layout: top marginal (short), right marginal (narrow)
-        gs = GridSpec(2, 2, width_ratios=[4, 1.1], height_ratios=[1.1, 4],
-                      hspace=0.05, wspace=0.05, figure=fig)
-        ax_main = fig.add_subplot(gs[1, 0])
-        ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main)
-        ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main)
-        # Hide tick labels on the shared axes
-        plt.setp(ax_top.get_xticklabels(), visible=False)
-        plt.setp(ax_right.get_yticklabels(), visible=False)
-    else:
-        ax_main = fig.add_subplot(111)
-        ax_top = ax_right = None
-
-    _draw_xy(
-        ax_main, x, y, x_label, y_label, mode=mode, color_scheme=color_scheme,
-        x_range=x_range, y_range=y_range, bins=bins,
-        show_marginals=show_marginals, aspect_ratio=aspect_ratio, **kwargs
-    )
-
-    if show_marginals:
-        _draw_marginals(ax_top, ax_right, x, y, x_label, y_label, x_range, y_range)
-
-    if save:
-        fig.savefig(save, dpi=dpi, bbox_inches="tight")
-    return fig, (ax_main, ax_top, ax_right) if show_marginals else (ax_main,)
-
-
-def _draw_xy(
-    ax,
-    x: np.ndarray,
-    y: np.ndarray,
-    x_label: str,
-    y_label: str,
-    *,
-    mode: str,
-    color_scheme: Optional[Union[int, str]],
-    x_range: Optional[Tuple[Optional[Number], Optional[Number]]],
-    y_range: Optional[Tuple[Optional[Number], Optional[Number]]],
-    bins: BinsT,
-    show_marginals: bool,
-    aspect_ratio: bool,
-    **kwargs,
-):
-    """Render main 2D content (scatter or hist2d)."""
-    # Axis cosmetics (simple, readable)
-    ax.tick_params(direction="in", top=True, right=True)
-    ax.grid(True, alpha=0.15, linestyle="--", linewidth=0.5)
-
-    # Limits (auto with light padding if unspecified)
-    xr = _resolve_range(x, x_range)
-    yr = _resolve_range(y, y_range)
-    ax.set_xlim(*xr)
-    ax.set_ylim(*yr)
-
-    # Aspect
-    if aspect_ratio:
-        ax.set_aspect("equal", adjustable="box")
-
-    # Labels
-    ax.set_xlabel(x_label)
-    ax.set_ylabel(y_label)
-
-    # Colors
-    cmap = _map_color_scheme(color_scheme)
-
-    if mode == "hist2d":
-        # Auto bins if needed
-        if bins is None:
-            bx = _auto_bins(x, xr)
-            by = _auto_bins(y, yr)
-            bins_ = (bx, by)
-        elif isinstance(bins, int):
-            bins_ = (bins, bins)
-        else:
-            bins_ = bins
-
-        H, xedges, yedges = np.histogram2d(x[np.isfinite(x)], y[np.isfinite(y)], bins=bins_, range=[xr, yr])
-        # Use pcolormesh for sharper edges
-        X, Y = np.meshgrid(xedges, yedges, indexing="xy")
-        im = ax.pcolormesh(X, Y, H.T, cmap=cmap, shading="auto")
-        cbar = plt.colorbar(im, ax=ax, pad=0.01)
-        cbar.set_label("counts")
-
-    elif mode == "scatter":
-        s = kwargs.get("s", 1.0)
-        alpha = kwargs.get("alpha", 1.0)
-        ax.scatter(x, y, s=s, alpha=alpha, marker=".", linewidths=0, edgecolors="none", c="k" if cmap is None else None, cmap=cmap)
-    else:
-        raise ValueError("mode must be 'scatter' or 'hist2d'.")
-
-
-def _draw_marginals(
-    ax_top,
-    ax_right,
-    x: np.ndarray,
-    y: np.ndarray,
-    x_label: str,
-    y_label: str,
-    x_range: Tuple[Optional[Number], Optional[Number]],
-    y_range: Tuple[Optional[Number], Optional[Number]],
-):
-    """Top and right 1D histograms (densities)."""
-    # Top (X)
-    ax_top.tick_params(direction="in", labelbottom=False)
-    ax_top.hist(x[np.isfinite(x)], bins=_auto_bins(x, x_range), range=x_range, color="0.2")
-    ax_top.set_ylabel("counts")
-
-    # Right (Y)
-    ax_right.tick_params(direction="in", labelleft=False)
-    ax_right.hist(y[np.isfinite(y)], bins=_auto_bins(y, y_range), range=y_range, orientation="horizontal", color="0.2")
-    ax_right.set_xlabel("counts")
-
 # ---------------------------------------------------------------------------
 # utilities
 # ---------------------------------------------------------------------------
 
-def _resolve_range(arr: np.ndarray, xr: Optional[Tuple[Optional[Number], Optional[Number]]]):
-    """Resolve (xmin, xmax): if None values, auto from finite data with 2% padding."""
+def _resolve_mode(mode: ModeT) -> Literal["scatter", "histo2d"]:
+    """Normalize plotting mode/aliases and fallback to 'histo2d' with a warning."""
+    if not isinstance(mode, str):
+        warnings.warn(f"Plot mode {mode!r} not recognized (not a string). Falling back to 'histo2d'.")
+        return "histo2d"
+    m = mode.strip().lower()
+    if m == "scatter" or m.startswith("s"):
+        return "scatter"
+    if m in {"histo", "hist2d", "histogram"} or m.startswith("h"):
+        return "histo2d"
+    warnings.warn(f"Plot mode {mode!r} not recognized. Falling back to 'histo2d'.")
+    return "histo2d"
+
+def _resolve_range(arr: np.ndarray, xr: RangeT) -> Tuple[float, float]:
+    """Resolve (min,max) range with finite-data auto and 2% padding (safe for constant/empty arrays)."""
     if xr is not None and xr[0] is not None and xr[1] is not None:
-        return xr
+        return (float(xr[0]), float(xr[1]))
     finite = arr[np.isfinite(arr)]
     if finite.size == 0:
         return (0.0, 1.0)
-    lo, hi = np.min(finite), np.max(finite)
-    if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
-        pad = 1.0 if not np.isfinite(lo) or not np.isfinite(hi) else max(1e-12, abs(hi) * 0.02)
-        return (float(lo - pad), float(hi + pad))
+    lo, hi = float(np.min(finite)), float(np.max(finite))
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        return (0.0, 1.0)
+    if lo == hi:
+        pad = max(1e-12, abs(hi) * 0.02) or 1.0
+        return (lo - pad, hi + pad)
     span = hi - lo
     pad = 0.02 * span
-    return (float(lo - pad), float(hi + pad))
+    return (lo - pad, hi + pad)
 
+def _auto_bins(
+    arrx: np.ndarray,
+    arry: np.ndarray,
+    bins: BinsT,
+    bin_width: Optional[Number],
+    bin_method: int,
+) -> Tuple[int, int]:
+    """Choose (nx, ny) bins via user value, width, or rule (sqrt/Sturges/Rice/Doane"""
 
-def _auto_bins(a: np.ndarray, xr: Tuple[Optional[Number], Optional[Number]]):
-    """Freedman–Diaconis like bin heuristic, clamped to [50, 300]."""
-    data = a[np.isfinite(a)]
-    n = data.size
-    if n < 2:
-        return 50
-    q75, q25 = np.percentile(data, [75, 25])
-    iqr = max(1e-12, q75 - q25)
-    span = (xr[1] - xr[0]) if xr and xr[0] is not None and xr[1] is not None else (data.max() - data.min())
-    bw = 2.0 * iqr * n ** (-1.0 / 3.0)
-    bins = int(max(10, min(300, round(span / max(bw, 1e-12)))))
+    if bins is not None:
+        return bins
+
+    bins = []
+
+    for histos in [arrx, arry]:
+        data = histos[np.isfinite(histos)]
+        n = data.size
+        if bin_width is not None:
+            bins.append(int((np.amax(data)-np.amin(data))/bin_width))
+        elif bin_method == 0:  # sqrt
+            bins.append(int(np.sqrt(n)))
+        elif bin_method == 1:  # Sturge
+            bins.append(int(np.log2(n))+1)
+        elif bin_method == 2:  # Rice
+            bins.append(int(2*n**(1/3)))
+        elif bin_method == 3:  # Doane's
+            sigma_g1 = np.sqrt(6*(n-2)/((n+1)*(n+3)))
+            bins.append(int(1+np.log2(n)*(1+moment(histos, order=3)/sigma_g1)))
+
     return bins
 
+def _color_palette(color: Optional[int]) -> Union[Tuple[float, float, float], Colormap]:
+    """Return a single RGB for monochrome scatter or a Matplotlib colormap for density/2D hist."""
 
-def _map_color_scheme(color_scheme: Optional[Union[int, str]]):
-    """Map legacy integer schemes to mpl colormaps. None → default cycle / black scatter."""
-    if color_scheme is None:
-        return None
-    if isinstance(color_scheme, str):
-        return plt.get_cmap(color_scheme)
-    # legacy integer mapping (tweak as you wish)
-    mapping = {
-        1: "Greys",
-        2: "viridis",
-        3: "plasma",
-        4: "magma",
-        5: "cividis",
-    }
-    return plt.get_cmap(mapping.get(int(color_scheme), "viridis"))
+    if color in (None, 0):
+        return (0.0, 0.0, 0.0)
+    if color == 1: return cm.viridis
+    if color == 2: return cm.magma
+    if color == 3: return cm.jet
+    if color == 4: return cm.plasma
+    # unknown: default to magma as a safe colormap
+    return cm.magma
+
+def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
+                              method="edgeworth", color="darkred"):
+    """Overlay a moment-matched PDF envelope onto a 1D histogram drawn in counts.
+
+    We compute moments from samples, build a PDF on a fine axis, then scale by N*bin_width
+    so the curve sits in 'counts' space.
+    """
+    d = np.asarray(data, dtype=float)
+    d = d[np.isfinite(d)]
+    if d.size < 2:
+        return
+
+    # moments
+    mu, sig, skew, kurt = stats.calc_moments_from_particle_distribution(d)  # (μ,σ,γ1,γ2_excess)
+    if not (np.isfinite(mu) and np.isfinite(sig) and sig > 0):
+        return
+
+    # axis to evaluate the envelope
+    xmin, xmax = rng
+    # be generous: μ±6σ but clipped to plotting range, and dense for a smooth curve
+    lo = max(xmin, mu - 6*sig)
+    hi = min(xmax, mu + 6*sig)
+    axis = np.linspace(lo, hi, 1024)
+
+    # envelope (PDF) on that axis
+    env = stats.calc_envelope_from_moments(
+        mean=mu, std=sig, skewness=skew, kurtosis_excess=kurt,
+        axis=axis, method=method, clip_negative=True
+    )["envelope"]
+
+    # scale to histogram counts: counts ≈ N * PDF * bin_width
+    N = d.size
+    bin_width = (xmax - xmin) / max(2, int(nbins))
+    counts_curve = N * env * bin_width
+
+    # plot
+    if horizontal:
+        ax.plot(counts_curve, axis, color=color, linewidth=0.5, alpha=1)
+    else:
+        ax.plot(axis, counts_curve, color=color, linewidth=0.5, alpha=1)
