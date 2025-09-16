@@ -597,9 +597,15 @@ def _common_xy_plot(
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
     # --- figure & rectangles (your math, lightly tidied) ---
-    m, n = 6.4, 6.4 if aspect_ratio else (6.4, 4.8)
-    dx = x_range[1] - x_range[0]
-    dy = y_range[1] - y_range[0]
+    if aspect_ratio:
+        fig_w, fig_h = 6.4, 6.4
+        dx = x_range[1] - x_range[0]
+        dy = y_range[1] - y_range[0]
+    else:
+        fig_w, fig_h = 6.4, 4.8
+        dx = fig_w
+        dy = fig_h
+
     left, bottom, spacing = 0.20, 0.10, 0.02
     spacing_x, spacing_y = spacing, spacing
     kx = ky = k = 0.25
@@ -619,7 +625,7 @@ def _common_xy_plot(
     rect_histx = [left, bottom + height + spacing_y + 0.02, width, kx * 0.9]
     rect_histy = [left + width + spacing_x + 0.02, bottom, ky * 0.9, height]
 
-    fig = plt.figure(figsize=(m, n), dpi=dpi)
+    fig = plt.figure(figsize=(float(fig_w), float(fig_h)), dpi=int(dpi))
     ax_image = fig.add_axes(rect_image)
     ax_image.tick_params(top=False, right=False)
     ax_image.set_xlabel(x_label)
