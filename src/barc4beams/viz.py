@@ -236,6 +236,8 @@ def plot_energy(
     plot: bool = True,
 ) -> Tuple[plt.Figure, plt.Axes]:
     """Energy distribution N vs E (eV), 1D histogram in counts."""
+    fig_siz = 3
+
     if apply_style:
         start_plotting(k)
 
@@ -244,7 +246,7 @@ def plot_energy(
     e = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)
     e = e[np.isfinite(e)]
     if e.size == 0:
-        fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=dpi)
+        fig, ax = plt.subplots(figsize=(fig_siz*6.4/4.8, fig_siz), dpi=dpi)
         ax.set_xlabel("Energy [eV]")
         ax.set_ylabel("[counts]")
         ax.text(0.5, 0.5, "no finite energies", ha="center", va="center", transform=ax.transAxes)
@@ -262,7 +264,7 @@ def plot_energy(
     counts, edges = np.histogram(e, bins=nbx, range=xr)
     centers = 0.5 * (edges[:-1] + edges[1:])
 
-    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(fig_siz*6.4/4.8, fig_siz), dpi=dpi)
 
     # filled area
     ax.fill_between(centers, 0, counts, step="mid", color="steelblue", alpha=0.5)
@@ -289,7 +291,7 @@ def plot_energy_vs_intensity(
     *,
     mode: str = "scatter",              # 'scatter' | 'histo2d' (aliases accepted)
     aspect_ratio: bool = False,         # default False: ranges are typically very unequal
-    color: Optional[int] = 2,
+    color: Optional[int] = 3,
     x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
     y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
     bins: BinsT = None,
@@ -631,7 +633,7 @@ def plot_beamline_configs(configs: Sequence[Dict],
 # style settings
 # ---------------------------------------------------------------------------
 
-def start_plotting(k: float = 1.0, interactive_dpi: int = 100) -> None:
+def start_plotting(k: float = 1.0) -> None:
     """
     Set global Matplotlib plot parameters scaled by factor k.
 
@@ -927,11 +929,11 @@ def _color_palette(color: Optional[int]) -> Union[Tuple[float, float, float], Co
     if color in (None, 0):
         return (0.0, 0.0, 0.0)
     if color == 1: return cm.viridis
-    if color == 2: return cm.magma
-    if color == 3: return cm.jet
-    if color == 4: return cm.plasma
-    # unknown: default to magma as a safe colormap
-    return cm.magma
+    if color == 2: return cm.plasma
+    if color == 3: return cm.turbo
+    if color == 4: return cm.magma
+    # unknown: default to viridis as a safe colormap
+    return cm.viridis
 
 def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
                               method="edgeworth", color="darkred"):
