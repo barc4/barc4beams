@@ -117,7 +117,7 @@ def plot_divergence(
     df: pd.DataFrame,
     *,
     mode: str = "scatter",
-    aspect_ratio: bool = True,
+    aspect_ratio: bool = False,
     color = 2,
     x_range = None,
     y_range = None,

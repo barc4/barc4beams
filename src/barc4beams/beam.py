@@ -127,6 +127,18 @@ class Beam:
             raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_phase_space(self.df, **kwargs)
 
+    def plot_energy(self, **kwargs):
+        """Plot energy distribution (rays vs E)."""
+        if self.n_runs != 1:
+            raise ValueError("Plotting not supported for multiple runs.")
+        return viz.plot_energy(self.df, **kwargs)
+
+    def plot_energy_vs_intensity(self, **kwargs):
+        """Plot intensity vs energy distribution."""
+        if self.n_runs != 1:
+            raise ValueError("Plotting not supported for multiple runs.")
+        return viz.plot_energy_vs_intensity(self.df, **kwargs)
+
     # --- saving ---
     def save(self, path: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -135,10 +147,8 @@ class Beam:
         The HDF5 file will contain the beam(s).
         A sibling JSON file (same base name) will contain the statistics.
         """
-        # HDF5
         io.save_beam(self._runs[0] if self.n_runs == 1 else self._runs, path)
 
-        # JSON (append .json to base name)
         base = path.rsplit(".", 1)[0]
         json_path = f"{base}.json"
         io.save_json_stats(self.stats, json_path, meta=meta)
