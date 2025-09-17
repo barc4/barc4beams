@@ -223,6 +223,118 @@ def plot_phase_space(
         plt.show()
     return fig, axes
 
+def plot_caustic(
+    caustic: dict,
+    *,
+    which: Literal["x", "y", "both"] = "both",
+    mode: str = "hist2d",                 # 'scatter' | 'hist2d' (aliases accepted)
+    aspect_ratio: bool = False,           # z vs X/Y typically very different scales
+    color: Optional[int] = 2,
+    z_range: RangeT = None,
+    xy_range: RangeT = None,
+    bins: BinsT = None,
+    bin_width: Optional[Number] = None,
+    bin_method: int = 0,
+    dpi: int = 300,
+    path: Optional[str] = None,           # if provided, auto-add _x/_y suffix when which='both'
+    showXhist: bool = True,               # hist over z
+    showYhist: bool = True,               # hist over X or Y
+    envelope: bool = False,               # envelopes are less meaningful on z; default False
+    envelope_method: str = "edgeworth",
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True
+):
+    """
+    Plot caustics as 2D scatter/hist2d:
+      - X vs z (µm vs m)
+      - Y vs z (µm vs m)
+
+    Parameters mirror the other viz helpers for consistency.
+    """
+    if apply_style:
+        start_plotting(k)
+
+    z = np.asarray(caustic["optical_axis"], dtype=float)
+    cm = caustic.get("caustic", {})
+    Xmat = cm.get("X", None)
+    Ymat = cm.get("Y", None)
+
+    def _stack(mat):
+        """Return stacked (z_stacked, pos_um) for a matrix of shape (P, N)."""
+        if mat is None:
+            return None, None
+        mat = np.asarray(mat, dtype=float)
+        if mat.ndim != 2 or mat.shape[0] != z.size:
+            raise ValueError("caustic['caustic'][X/Y] must have shape (len(z), N).")
+        P, N = mat.shape
+        z_stacked = np.repeat(z, N)
+        pos_um    = mat.reshape(P * N) * 1e6
+        return z_stacked, pos_um
+
+    def _suffix(base: Optional[str], suf: str) -> Optional[str]:
+        if not base:
+            return None
+        stem, ext = (base.rsplit(".", 1) + ["png"])[:2]
+        return f"{stem}{suf}.{ext}"
+
+    out = []
+
+    if which in ("x", "both"):
+        zx, xu = _stack(Xmat)
+        if zx is None:
+            raise ValueError("X matrix not present in caustic['caustic']['X'].")
+        fig_x, axes_x = _common_xy_plot(
+            x=zx, y=xu,
+            x_label=r"$z$ [m]", y_label=r"$x$ [$\mu$m]",
+            mode=_resolve_mode(mode),
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=z_range,
+            y_range=xy_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=_suffix(path, "_x_vs_z") if (which == "both") else path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope=envelope,
+            envelope_method=envelope_method,
+        )
+        out.append((fig_x, axes_x))
+
+    if which in ("y", "both"):
+        zy, yu = _stack(Ymat)
+        if zy is None:
+            raise ValueError("Y matrix not present in caustic['caustic']['Y'].")
+        fig_y, axes_y = _common_xy_plot(
+            x=zy, y=yu,
+            x_label=r"$z$ [m]", y_label=r"$y$ [$\mu$m]",
+            mode=_resolve_mode(mode),
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=z_range,
+            y_range=xy_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=_suffix(path, "_y_vs_z") if (which == "both") else path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope=envelope,
+            envelope_method=envelope_method,
+        )
+        out.append((fig_y, axes_y))
+
+    if plot:
+        plt.show()
+
+    if which == "both":
+        return tuple(out)
+    return out[0]
+
 def plot_energy(
     df: pd.DataFrame,
     *,

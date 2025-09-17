@@ -326,7 +326,8 @@ def calc_fwhm_from_particle_distribution(profile: np.ndarray, bins: Union[int, N
 
     - If `bins` is None, uses Freedman–Diaconis rule to set bin width; falls back to sqrt(N) if IQR=0.
     - The algorithm finds the two half-maximum crossing points that straddle the global peak.
-    - Returns width (>0) in the same units as the profile, or -1.0 on failure.
+    - Returns width (>0) in profile units, or the data span when the histogram
+      never goes below half max (flat-top/cropped case). Returns -1.0 only on failure.
 
     Args:
         profile (np.ndarray): 1D array representing particle positions (e.g., X or Y).
@@ -359,9 +360,15 @@ def calc_fwhm_from_particle_distribution(profile: np.ndarray, bins: Union[int, N
     centers = 0.5 * (edges[:-1] + edges[1:])
     target = 0.5 * counts.max()
 
-    # find threshold crossings with linear interpolation
+    # crossings
     above = counts >= target
     flips = np.flatnonzero(above[:-1] ^ above[1:])
+
+    # --- NEW: flat-top / cropped fallback ---
+    # If we never cross below half-maximum anywhere, use the sampled span.
+    if flips.size == 0 and np.all(above):
+        return float(edges[-1] - edges[0])
+
     if flips.size == 0:
         return -1.0
 
@@ -370,18 +377,20 @@ def calc_fwhm_from_particle_distribution(profile: np.ndarray, bins: Union[int, N
         x1, x2 = centers[i], centers[i+1]
         if y2 == y1:  # flat at threshold
             return 0.5 * (x1 + x2)
-        return x1 + (target - y1) * (x2 - x1) / (y2 - y1)
+        return x1 + (target - y1) * (x2 - y1) / (y2 - y1)
 
     x_cross = np.array([interp_cross(i) for i in flips], dtype=float)
     if x_cross.size < 2 or not np.all(np.isfinite(x_cross)):
         return -1.0
 
-    # pick crossings around the global peak
+    # around the global peak
     x_peak = centers[int(np.argmax(counts))]
-    left = x_cross[x_cross <= x_peak]
+    left  = x_cross[x_cross <= x_peak]
     right = x_cross[x_cross >= x_peak]
+
+    # If one side is missing (e.g., peak at the boundary), treat as cropped window.
     if left.size == 0 or right.size == 0:
-        return -1.0
+        return float(edges[-1] - edges[0])
 
     width = float(right[0] - left[-1])
     return width if np.isfinite(width) and width > 0 else -1.0
@@ -421,6 +430,11 @@ def calc_e2_width_from_particle_distribution(profile: np.ndarray, bins: Union[in
     # find threshold crossings with linear interpolation
     above = counts >= target
     flips = np.flatnonzero(above[:-1] ^ above[1:])
+
+    # --- NEW: flat-top / cropped fallback ---
+    if flips.size == 0 and np.all(above):
+        return float(edges[-1] - edges[0])  # never below 1/e² → span
+
     if flips.size == 0:
         return -1.0
 
@@ -439,8 +453,10 @@ def calc_e2_width_from_particle_distribution(profile: np.ndarray, bins: Union[in
     x_peak = centers[int(np.argmax(counts))]
     left  = x_cross[x_cross <= x_peak]
     right = x_cross[x_cross >= x_peak]
+
+    # --- NEW: boundary-peak fallback (one side missing) ---
     if left.size == 0 or right.size == 0:
-        return -1.0
+        return float(edges[-1] - edges[0])
 
     width = float(right[0] - left[-1])
     return width if np.isfinite(width) and width > 0 else -1.0
