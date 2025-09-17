@@ -118,7 +118,7 @@ def plot_divergence(
     *,
     mode: str = "scatter",
     aspect_ratio: bool = True,
-    color = 1,
+    color = 2,
     x_range = None,
     y_range = None,
     bins = None,
@@ -161,8 +161,8 @@ def plot_phase_space(
     *,
     direction: str = "both",
     mode: str = "scatter",
-    aspect_ratio: bool = True,
-    color = 1,
+    aspect_ratio: bool = False,
+    color = 3,
     x_range = None,
     y_range = None,
     bins = None,
@@ -631,7 +631,7 @@ def plot_beamline_configs(configs: Sequence[Dict],
 # style settings
 # ---------------------------------------------------------------------------
 
-def start_plotting(k: float = 1.0) -> None:
+def start_plotting(k: float = 1.0, interactive_dpi: int = 100) -> None:
     """
     Set global Matplotlib plot parameters scaled by factor k.
 
@@ -649,10 +649,10 @@ def start_plotting(k: float = 1.0) -> None:
         "font.serif": ["Times New Roman"],
     })
 
-    plt.rc("axes",   titlesize=15 * k, labelsize=14 * k)
-    plt.rc("xtick",  labelsize=13 * k)
-    plt.rc("ytick",  labelsize=13 * k)
-    plt.rc("legend", fontsize=12 * k)
+    plt.rc("axes",   titlesize=12. * k, labelsize=12. * k)
+    plt.rc("xtick",  labelsize=11. * k)
+    plt.rc("ytick",  labelsize=11. * k)
+    plt.rc("legend", fontsize=11.* k)
 
     plt.rcParams.update({
         "axes.grid": False,
@@ -708,19 +708,24 @@ def _common_xy_plot(
     x_range = _resolve_range(x, x_range)
     y_range = _resolve_range(y, y_range)
 
+    if aspect_ratio is True:
+        x_range = (np.min([x_range[0], y_range[0]]), np.max([x_range[1], y_range[1]]))
+        y_range = x_range
+
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
+    fig_siz = 3
     # --- figure & rectangles (your math, lightly tidied) ---
     if aspect_ratio:
-        fig_w, fig_h = 6.4, 6.4
+        fig_w, fig_h = fig_siz, fig_siz
         dx = x_range[1] - x_range[0]
         dy = y_range[1] - y_range[0]
     else:
-        fig_w, fig_h = 6.4, 4.8
+        fig_w, fig_h = fig_siz*6.4/4.8, fig_siz
         dx = fig_w
         dy = fig_h
 
-    left, bottom, spacing = 0.20, 0.10, 0.02
+    left, bottom, spacing = 0.20, 0.20, 0.02
     spacing_x, spacing_y = spacing, spacing
     kx = ky = k = 0.25
 
@@ -736,8 +741,8 @@ def _common_xy_plot(
         kx = k * dx / dy
 
     rect_image = [left, bottom, width, height]
-    rect_histx = [left, bottom + height + spacing_y + 0.02, width, kx * 0.9]
-    rect_histy = [left + width + spacing_x + 0.02, bottom, ky * 0.9, height]
+    rect_histx = [left, bottom + height + spacing_x + 0.02, width, kx*.95]
+    rect_histy = [left + width + spacing_x + 0.02, bottom, kx*.95, height]
 
     fig = plt.figure(figsize=(float(fig_w), float(fig_h)), dpi=int(dpi))
     ax_image = fig.add_axes(rect_image)
@@ -752,39 +757,39 @@ def _common_xy_plot(
         ax_histx.tick_params(direction='in', which='both', labelbottom=False, top=True, right=True, colors='black')
         for sp in ('bottom', 'top', 'right', 'left'):
             ax_histx.spines[sp].set_color('black')
-        ax_histx.hist(x, bins=nb_of_bins[0], color='steelblue', linewidth=1,
-                      edgecolor='steelblue', histtype='step', alpha=1)
+        ax_histx.hist(x, bins=nb_of_bins[0], range=x_range,
+                    color='steelblue', linewidth=1, edgecolor='steelblue',
+                    histtype='step', alpha=1)
         ax_histx.set_xlim(x_range)
-        # simple autoscale, capped for aesthetics
-        hx, _ = np.histogram(x, nb_of_bins[0])
-        ax_histx.set_ylim(-0.05 * hx.max(), 1.05 * hx.max())
+
+        hx, _ = np.histogram(x, nb_of_bins[0], range=x_range)
+        ax_histx.set_ylim(-0.05 * hx.max(), 1.05 * max(1, hx.max()))
         ax_histx.locator_params(tight=True, nbins=3)
         ax_histx.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histx.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
         ax_histx.set_ylabel('[rays]', fontsize='medium')
         if envelope:
             _overlay_envelope_on_hist(ax_histx, x, x_range, nb_of_bins[0],
-                                      horizontal=False,
-                                      method=envelope_method)
-            
+                                    horizontal=False, method=envelope_method)
+
     if showYhist:
         ax_histy = fig.add_axes(rect_histy, sharey=ax_image)
         ax_histy.tick_params(direction='in', which='both', labelleft=False, top=True, right=True, colors='black')
         for sp in ('bottom', 'top', 'right', 'left'):
             ax_histy.spines[sp].set_color('black')
-        ax_histy.hist(y, bins=nb_of_bins[1], orientation='horizontal', color='steelblue',
-                      linewidth=1, edgecolor='steelblue', histtype='step', alpha=1)
+        ax_histy.hist(y, bins=nb_of_bins[1], range=y_range,
+                    orientation='horizontal', color='steelblue',
+                    linewidth=1, edgecolor='steelblue', histtype='step', alpha=1)
         ax_histy.set_ylim(y_range)
-        hy, _ = np.histogram(y, nb_of_bins[1])
-        ax_histy.set_xlim(-0.05 * hy.max(), 1.05 * hy.max())
+        hy, _ = np.histogram(y, nb_of_bins[1], range=y_range)
+        ax_histy.set_xlim(-0.05 * hx.max(), 1.05 * max(1, hy.max()))
         ax_histy.locator_params(tight=True, nbins=3)
         ax_histy.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histy.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
         ax_histy.set_xlabel('[rays]', fontsize='medium')
         if envelope:
             _overlay_envelope_on_hist(ax_histy, y, y_range, nb_of_bins[1],
-                                      horizontal=True,
-                                      method=envelope_method)
+                                    horizontal=True, method=envelope_method)
     # --- main scatter / hist2d ---
     ax_image.set_xlim(x_range)
     ax_image.set_ylim(y_range)
@@ -812,11 +817,12 @@ def _common_xy_plot(
 
     # ticks/aspect
     ax_image.locator_params(tight=True, nbins=4)
-    ax_image.set_aspect('equal' if aspect_ratio else 'auto')
+    ax_image.set_aspect('auto')
+    # ax_image.set_aspect('equal' if aspect_ratio else 'auto')
 
     if path is not None:
         fig.savefig(path, dpi=dpi, bbox_inches='tight')
-    # plt.show()
+
     return fig, (ax_image, ax_histx, ax_histy)
 
 def _prep_beam_xy(
