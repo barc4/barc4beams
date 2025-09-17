@@ -212,6 +212,6 @@ def _from_shadow(beam, cols, getter_name: str) -> pd.DataFrame:
     lost = df["lost_ray_flag"] == 1
     for col in ("intensity", "intensity_s-pol", "intensity_p-pol"):
         df.loc[lost, col] = 0.0
-    df["intensity"] = np.minimum(df["intensity"].to_numpy(), 1.0)
+        df[col] = np.minimum(df[col].to_numpy(), 1.0)
 
     return _enforce_beam_dtypes(df)
