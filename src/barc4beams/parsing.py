@@ -13,25 +13,29 @@ from typing import Optional, Sequence
 import numpy as np
 
 
-def parse_shadow_info(text: str, labels: Optional[Sequence[str]] = None) -> dict:
+def parse_shadow_sys_info(text: str, labels: Optional[Sequence[str]] = None) -> dict:
     """
-    Parse SHADOW optical element positions from text, ignoring primed rows (e.g., 3').
-    Optionally attach user-provided labels and inferred type codes.
+    Parse SHADOW optical-element positions from text, ignoring primed rows (e.g., 3').
+    Optionally attach user-provided labels and infer element *kind*.
 
-    Parameters
-    ----------
-    text : str
-        SHADOW output text containing optical element positions.
-    labels : sequence of str, optional
-        Custom labels for each UNPRIMED element (must match the number of unprimed rows).
-        Conventions:
-          - Element 0 is the source (type 'SRC'), label can be 'SRC', 'U52', etc.
-          - Empty string "" → empty element (type 'E').
-          - Labels starting with 'M' → mirror (type 'M').
-          - Labels starting with 'G' → grating (type 'G').
-          - Labels starting with 'C' → crystal (type 'C').
-          - Labels starting with 'S' → slit (type 'S').
-          - Any other non-empty label → observation point (type 'O').
+    Kinds (codes)
+    -------------
+    - 'SRC' : source (index 0 is always the source)
+    - 'O'   : screen / observation point
+    - 'M'   : mirror
+    - 'G'   : grating
+    - 'C'   : crystal
+    - 'S'   : slit
+    - 'E'   : empty element (coordinate break / rotation / placeholder)
+    - 'F'   : focus (designated focal plane)
+    - 'X'   : experiment (endstation / sample environment)
+
+    Label conventions (case-insensitive)
+    ------------------------------------
+    • Empty string → 'E'
+    • Startswith: 'M'→M, 'G'→G, 'C'→C, 'S'→S, 'F' or 'FOC'→F, 'X' or 'EXP'→X, 'O' or 'SCR'→O
+    • Anything else (non-empty) → 'O'
+    • Element 0 is always 'SRC' regardless of label.
 
     Returns
     -------
@@ -40,9 +44,9 @@ def parse_shadow_info(text: str, labels: Optional[Sequence[str]] = None) -> dict
           "x": np.ndarray,
           "y": np.ndarray,
           "z": np.ndarray,
-          "oe": {
-            "labels": list[str],      # length = number of UNPRIMED elements
-            "type":   list[str],      # each in {'SRC','E','M','G','C','S','O'}
+          "elements": {
+            "labels": list[str],   # as provided (trimmed) or "" if None
+            "kinds":  list[str],   # codes in {'SRC','O','M','G','C','S','E','F','X'}
           }
         }
     """
@@ -51,15 +55,19 @@ def parse_shadow_info(text: str, labels: Optional[Sequence[str]] = None) -> dict
     matches = re.findall(pattern, text, re.MULTILINE)
 
     if not matches:
-        return {"x": np.array([]), "y": np.array([]), "z": np.array([]), "oe": {"labels": [], "type": []}}
+        return {"x": np.array([]), "y": np.array([]), "z": np.array([]),
+                "elements": {"labels": [], "kinds": []}}
 
     x, y, z = [], [], []
     for _, xx, yy, zz in matches:
-        x.append(-1*float(xx)); y.append(float(yy)); z.append(float(zz))
+        # SHADOW -> our convention (invert X)
+        x.append(-1.0 * float(xx))
+        y.append(float(yy))
+        z.append(float(zz))
 
     n = len(matches)
 
-    # Validate/prepare labels
+    # Validate/normalize labels
     if labels is None:
         labels_list = [""] * n
     else:
@@ -69,24 +77,26 @@ def parse_shadow_info(text: str, labels: Optional[Sequence[str]] = None) -> dict
 
     def classify(idx: int, lbl: str) -> str:
         if idx == 0:
-            return "SRC"  # first element is always the source (e.g., 'SRC', 'U52', etc.)
-        if lbl == "":
+            return "SRC"
+        s = lbl.strip().upper()
+        if s == "":
             return "E"
-        if lbl.startswith("M"):
-            return "M"
-        if lbl.startswith("G"):
-            return "G"
-        if lbl.startswith("C"):
-            return "C"
-        if lbl.startswith("S"):
-            return "S"
+        # synonyms / startswith
+        if s.startswith("M"):       return "M"
+        if s.startswith("G"):       return "G"
+        if s.startswith("C"):       return "C"
+        if s.startswith("S"):       return "S"
+        if s.startswith("F") or s.startswith("FOC"): return "F"
+        if s.startswith("X") or s.startswith("EXP"): return "X"
+        if s.startswith("O") or s.startswith("SCR"): return "O"
+        # default non-empty → observation point
         return "O"
 
-    types = [classify(i, lbl) for i, lbl in enumerate(labels_list)]
+    kinds = [classify(i, lbl) for i, lbl in enumerate(labels_list)]
 
     return {
-        "x": np.array(x),
-        "y": np.array(y),
-        "z": np.array(z),
-        "oe": {"labels": labels_list, "type": types},
+        "x": np.asarray(x),
+        "y": np.asarray(y),
+        "z": np.asarray(z),
+        "elements": {"labels": labels_list, "kinds": kinds},
     }

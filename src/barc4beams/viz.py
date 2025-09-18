@@ -27,6 +27,38 @@ RangeT = Optional[Tuple[Optional[Number], Optional[Number]]]
 BinsT  = Optional[Union[int, Tuple[int, int]]]
 ModeT  = Union[Literal["scatter", "hist2d"], str]
 
+_DEFAULT_COLOR_MAP = {
+    "SRC": "darkred",
+    "M":   "olive",
+    "G":   "steelblue",
+    "C":   "indigo",
+    "O":   "teal",
+    "S":   "darkmagenta",
+    "F":   "slategray",
+    "X":   "peru",
+}
+
+_DEFAULT_MARKER_MAP = {
+    "SRC": "*",
+    "M":   "s",                
+    "G":   "D",                 
+    "C":   "p",                 
+    "O":   "o",    
+    "S":   "o",      
+    "F":   "v",
+    "X":   "X",                 
+}
+
+_DEFAULT_LEGEND_MAP = {
+    "SRC": "source",
+    "M":   "mirror",
+    "G":   "grating",
+    "C":   "crystal",
+    "O":   "screen",
+    "S":   "slit",
+    "F":   "focus",
+    "X":   "exp.",}
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -464,7 +496,7 @@ def plot_beamline(shadow_info: Dict,
     shadow_info : dict
         Output from `parse_shadow_info`:
           - "x", "y", "z" : np.ndarray [m]
-          - "oe": {"labels": list[str], "type": list[str]} with {'S','E','M','G','O'}
+          - "elements": {"labels": list[str], "type": list[str]} with {'SRC','O','M','G','C','S','F','X','E}
     show_source : bool, optional
         If False, omit the source (first element). Default True.
     draw_to_scale : bool, optional
@@ -481,64 +513,61 @@ def plot_beamline(shadow_info: Dict,
     x = np.asarray(shadow_info["x"], dtype=float)
     y = np.asarray(shadow_info["y"], dtype=float)
     z = np.asarray(shadow_info["z"], dtype=float)
-    labels: List[str] = shadow_info.get("oe", {}).get("labels", [""] * len(x))
-    types:  List[str] = shadow_info.get("oe", {}).get("type",   ["O"] * len(x))
+    labels, types = _extract_labels_types(shadow_info)
+    if len(types) != len(x):
+        types = (types + ["O"] * len(x))[:len(x)]
+        labels = (labels + [""] * len(x))[:len(x)]
 
-    idxs = [i for i, t in enumerate(types) if t != "E" and (show_source or not (i == 0 and t == "S"))]
+    # keep empties out; optionally hide source at index 0
+    idxs = [i for i, t in enumerate(types)
+            if t != "E" and (show_source or not (i == 0 and t == "SRC"))]
     if not idxs:
         raise ValueError("Nothing to plot after filtering (no elements).")
-
-    color_map  = {"S": "darkred", "M": "olive", "G": "steelblue", "O": "teal"}
-    marker_map = {"S": "*",       "M": "s",     "G": "D",         "O": "o"}
-    legend_map = {"S": "source",  "M": "mirror","G": "grating",   "O": "screen"}
 
     def style(ax, ylabel):
         ax.set_facecolor("white")
         ax.grid(True, which="both", color="gray", linestyle=":", linewidth=0.5)
         ax.tick_params(direction="in", top=True, right=True)
         ax.set_ylabel(ylabel)
-        for spine in ("top", "right", "bottom", "left"):
-            ax.spines[spine].set_color("black")
+        for s in ("top","right","bottom","left"):
+            ax.spines[s].set_color("black")
 
     def plot_points(ax, which: str, add_legend=True):
-        """Plot markers for selected elements on ax versus y. which='top' (x) or 'side' (z)."""
         V = x if which == "top" else z
         ax.plot(y[idxs], V[idxs], color="0.6", lw=0.8, zorder=1)
 
         seen = set()
         for i in idxs:
             t = types[i]
-            c = color_map.get(t, "black")
-            m = marker_map.get(t, "o")
-            lbl = legend_map[t] if (add_legend and t not in seen) else None
+            c = _DEFAULT_COLOR_MAP.get(t, "black")
+            m = _DEFAULT_MARKER_MAP.get(t, "o")
+            lbl = _DEFAULT_LEGEND_MAP.get(t) if (add_legend and t not in seen) else None
             seen.add(t)
-            if t == "O":
+
+            if t  == "O":
                 ax.plot(y[i], V[i], linestyle="none", marker=m,
-                        markerfacecolor=c, markeredgecolor=c,
-                        fillstyle="left", markersize=8, zorder=3, label=lbl)
+                        markerfacecolor=c, markeredgecolor='black', markeredgewidth=0.8,
+                        fillstyle="left", markersize=9, zorder=3, label=lbl)
+            elif t in ("M","G","C","X","F", "S"):
+                ax.plot(y[i], V[i], linestyle="none", marker=m,
+                        markerfacecolor=c, markeredgecolor='black',
+                        markeredgewidth=0.5, markersize=9, zorder=3, label=lbl)
             else:
                 ax.plot(y[i], V[i], linestyle="none", marker=m,
-                        markerfacecolor=("white" if t in ("M", "G") else c),
-                        markeredgecolor=c, markeredgewidth=1.2,
-                        markersize=8, zorder=3, label=lbl)
+                        markerfacecolor=c, markeredgecolor='black', markeredgewidth=0.5,
+                        markersize=11, zorder=3, label=lbl)
 
         if add_legend:
             h, _ = ax.get_legend_handles_labels()
             if h:
                 ax.legend(loc="best", frameon=True)
 
-    def square_limits_match_x(ax, Y: np.ndarray, V: np.ndarray):
-        """
-        Make the numeric span square with the *horizontal* span as master:
-        vertical span (V) == horizontal y-span, centered on data midpoints.
-        """
-        ymin, ymax = np.nanmin(Y), np.nanmax(Y)
+    def square_limits_match_x(ax, Y, V):
+        ymin, ymax = float(np.nanmin(Y)), float(np.nanmax(Y))
         yspan = max(ymax - ymin, 1e-9)
         yctr  = 0.5 * (ymax + ymin)
-
-        vmin, vmax = np.nanmin(V), np.nanmax(V)
-        vctr = 0.5 * (vmax + vmin)
-
+        vmin, vmax = float(np.nanmin(V)), float(np.nanmax(V))
+        vctr  = 0.5 * (vmax + vmin)
         pad = 0.02 * yspan
         ax.set_xlim(yctr - 0.5*yspan - pad, yctr + 0.5*yspan + pad)
         ax.set_ylim(vctr - 0.5*yspan - pad, vctr + 0.5*yspan + pad)
@@ -560,23 +589,18 @@ def plot_beamline(shadow_info: Dict,
         square_limits_match_x(ax_side, y[idxs], z[idxs])
 
         plt.show()
-
     else:
         fig, (ax_top, ax_side) = plt.subplots(
             2, 1, sharex=True, figsize=(12, 6), gridspec_kw={"height_ratios": [1, 1]}
         )
         fig.suptitle("Beamline layout", fontsize=16 * k, x=0.5)
-
         style(ax_top, "top view [m]")
         style(ax_side, "side view [m]")
         ax_side.set_xlabel("[m]")
-
         plot_points(ax_top, which="top", add_legend=True)
         plot_points(ax_side, which="side", add_legend=False)
-
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
-
 
 def plot_beamline_configs(configs: Sequence[Dict],
                           config_labels: Sequence[str],
@@ -622,7 +646,6 @@ def plot_beamline_configs(configs: Sequence[Dict],
     cfg_colors_iter = cycle(cfg_colors_base)
     cfg_colors = [next(cfg_colors_iter) for _ in range(n_cfg)]
 
-    marker_map = {"S": "*", "M": "s", "G": "D", "O": "o"}
 
     def style(ax, ylabel):
         ax.set_facecolor("white")
@@ -633,7 +656,7 @@ def plot_beamline_configs(configs: Sequence[Dict],
             ax.spines[spine].set_color("black")
 
     def filter_indices(types: List[str]) -> List[int]:
-        return [i for i, t in enumerate(types) if t != "E" and (show_source or not (i == 0 and t == "S"))]
+        return [i for i, t in enumerate(types) if t != "E" and (show_source or not (i == 0 and t == "SRC"))]
 
     Y_all_top, Vx_all, Y_all_side, Vz_all = [], [], [], []
     per_cfg_data = []
@@ -641,7 +664,9 @@ def plot_beamline_configs(configs: Sequence[Dict],
         x = np.asarray(cfg["x"], dtype=float)
         y = np.asarray(cfg["y"], dtype=float)
         z = np.asarray(cfg["z"], dtype=float)
-        types = cfg.get("oe", {}).get("type", ["O"] * len(x))
+        labels, types = _extract_labels_types(cfg)
+        if len(types) != len(x):
+            types = (types + ["O"] * len(x))[:len(x)]
 
         idxs = filter_indices(types)
         if not idxs:
@@ -684,19 +709,19 @@ def plot_beamline_configs(configs: Sequence[Dict],
                     label=(label if add_legend else None))
 
             for yy, vv, tt in zip(y_i, V, t_i):
-                m = marker_map.get(tt, "o")
+                m = _DEFAULT_MARKER_MAP.get(tt, "o")
                 if tt == "O":
                     ax.plot(yy, vv, linestyle="none", marker=m,
-                            markerfacecolor=color, markeredgecolor=color,
-                            fillstyle="left", markersize=8, zorder=3)
-                elif tt in ("M", "G"):
+                            markerfacecolor=color, markeredgecolor='black', markeredgewidth=0.8,
+                            fillstyle="left", markersize=9, zorder=3)
+                elif tt in ("M","G","C","X","F", "S"):
                     ax.plot(yy, vv, linestyle="none", marker=m,
-                            markerfacecolor="white", markeredgecolor=color,
-                            markeredgewidth=1.2, markersize=8, zorder=3)
+                            markerfacecolor=color, markeredgecolor='black',
+                            markeredgewidth=0.5, markersize=9, zorder=3)
                 else:  # 'S' or fallback
                     ax.plot(yy, vv, linestyle="none", marker=m,
-                            markerfacecolor=color, markeredgecolor=color,
-                            markersize=9 if tt == "S" else 8, zorder=3)
+                            markerfacecolor=color, markeredgecolor='black', markeredgewidth=0.5,
+                            markersize=11, zorder=3)
 
         if add_legend:
             h, _ = ax.get_legend_handles_labels()
@@ -973,6 +998,23 @@ def _prep_beam_xy(
 # ---------------------------------------------------------------------------
 # utilities
 # ---------------------------------------------------------------------------
+
+def _extract_labels_types(info: dict):
+    """
+    Accepts either:
+      - {"elements":{"labels":[...], "kinds":[...]}}
+      - {"oe":{"labels":[...], "type":[...]}}
+    Returns (labels, types) lists of equal length.
+    """
+    if "elements" in info:
+        block = info["elements"]
+        labels = block.get("labels", [])
+        types  = block.get("kinds",  [])
+    else:
+        block = info.get("oe", {})
+        labels = block.get("labels", [])
+        types  = block.get("type",   [])
+    return list(labels), list(types)
 
 def _resolve_mode(mode: ModeT) -> Literal["scatter", "hist2d"]:
     """Normalize plotting mode/aliases and fallback to 'hist2d' with a warning."""
