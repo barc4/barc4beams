@@ -395,73 +395,6 @@ def calc_fwhm_from_particle_distribution(profile: np.ndarray, bins: Union[int, N
     width = float(right[0] - left[-1])
     return width if np.isfinite(width) and width > 0 else -1.0
 
-
-def calc_e2_width_from_particle_distribution(profile: np.ndarray, bins: Union[int, None] = None) -> float:
-    """
-    1/e² width of a 1D beam profile via histogram + linear interpolation,
-    analogous to calc_fwhm_from_particle_distribution but using peak/e².
-
-    Returns positive width (same units as `profile`) or -1.0 on failure.
-    """
-    x = np.asarray(profile, dtype=float)
-    x = x[np.isfinite(x)]
-    if x.size < 2:
-        return -1.0
-
-    # Bin choice (same heuristic as FWHM helper)
-    if bins is None:
-        q75, q25 = np.percentile(x, [75, 25])
-        iqr = q75 - q25
-        if iqr > 0:
-            h = 2.0 * iqr / (x.size ** (1/3))
-            bins = max(2, int(np.ceil((x.max() - x.min()) / h))) if h > 0 else int(np.sqrt(x.size))
-        else:
-            bins = int(np.sqrt(x.size))
-    bins = max(2, int(bins))
-
-    # histogram
-    counts, edges = np.histogram(x, bins=bins, density=True)
-    if not np.any(np.isfinite(counts)) or counts.max() <= 0:
-        return -1.0
-    centers = 0.5 * (edges[:-1] + edges[1:])
-
-    target = counts.max() / (np.e ** 2)
-
-    # find threshold crossings with linear interpolation
-    above = counts >= target
-    flips = np.flatnonzero(above[:-1] ^ above[1:])
-
-    # --- NEW: flat-top / cropped fallback ---
-    if flips.size == 0 and np.all(above):
-        return float(edges[-1] - edges[0])  # never below 1/e² → span
-
-    if flips.size == 0:
-        return -1.0
-
-    def _interp(i):
-        y1, y2 = counts[i], counts[i+1]
-        x1, x2 = centers[i], centers[i+1]
-        if y2 == y1:
-            return 0.5 * (x1 + x2)
-        return x1 + (target - y1) * (x2 - y1) / (y2 - y1)
-
-    x_cross = np.array([_interp(i) for i in flips], dtype=float)
-    if x_cross.size < 2 or not np.all(np.isfinite(x_cross)):
-        return -1.0
-
-    # pick crossings around the global peak
-    x_peak = centers[int(np.argmax(counts))]
-    left  = x_cross[x_cross <= x_peak]
-    right = x_cross[x_cross >= x_peak]
-
-    # --- NEW: boundary-peak fallback (one side missing) ---
-    if left.size == 0 or right.size == 0:
-        return float(edges[-1] - edges[0])
-
-    width = float(right[0] - left[-1])
-    return width if np.isfinite(width) and width > 0 else -1.0
-
-
 def calc_centroid_from_particle_distribution(
     profile: np.ndarray,
     weights: Optional[np.ndarray] = None,
@@ -530,7 +463,6 @@ def calc_moments_from_particle_distribution(profile: np.ndarray) -> Tuple[float,
     skew = m3 / (sigma**3)
     kurt_excess = m4 / (sigma**4) - 3.0
     return (mu, sigma, skew, kurt_excess)
-
 
 def calc_envelope_from_moments(
     mean: float,
@@ -705,9 +637,6 @@ def _centroid(x):
 def _fwhm(x):
     return calc_fwhm_from_particle_distribution(x, bins=None)
 
-def _e2(x):
-    return calc_e2_width_from_particle_distribution(x, bins=None)
-
 def _moments(x):
     return calc_moments_from_particle_distribution(x)
 
@@ -721,9 +650,7 @@ def _per_run_stats(df, col):
     mu, std, skew, kurt = _moments(arr)
     centroid = _centroid(arr)
     fwhm = _fwhm(arr)
-    e2 = _e2(arr) if col in ('X','Y') else np.nan
     return {
         "mean": mu, "centroid": centroid, "std": std,
-        "fwhm": fwhm, "skewness": skew, "kurtosis": kurt,
-        "e2": e2
+        "fwhm": fwhm, "skewness": skew, "kurtosis": kurt
     }
