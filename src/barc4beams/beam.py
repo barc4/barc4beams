@@ -336,7 +336,6 @@ class Beam:
         k: float = 1.0,
         plot: bool = True,
         top_stat: Optional[str] = None,
-
         n_points: int = 501,
         start: float = -0.5,
         finish: float = 0.5,
