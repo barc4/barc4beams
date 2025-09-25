@@ -47,7 +47,7 @@ def plot_beam(
     bins = None,
     bin_width = None,
     bin_method = 0,
-    dpi: int = 300,
+    dpi: int = 100,
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
@@ -125,7 +125,7 @@ def plot_divergence(
     bins = None,
     bin_width = None,
     bin_method = 0,
-    dpi: int = 300,
+    dpi: int = 100,
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
@@ -169,7 +169,7 @@ def plot_phase_space(
     bins = None,
     bin_width = None,
     bin_method = 0,
-    dpi: int = 300,
+    dpi: int = 100,
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
@@ -228,113 +228,150 @@ def plot_caustic(
     caustic: dict,
     *,
     which: Literal["x", "y", "both"] = "both",
-    mode: str = "hist2d",                 # 'scatter' | 'hist2d' (aliases accepted)
     aspect_ratio: bool = False,           # z vs X/Y typically very different scales
-    color: Optional[int] = 2,
-    z_range: RangeT = None,
-    xy_range: RangeT = None,
-    bins: BinsT = None,
-    bin_width: Optional[Number] = None,
-    bin_method: int = 0,
-    dpi: int = 300,
-    path: Optional[str] = None,           # if provided, auto-add _x/_y suffix when which='both'
-    showXhist: bool = True,               # hist over z
-    showYhist: bool = True,               # hist over X or Y
-    envelope: bool = False,               # envelopes are less meaningful on z; default False
-    envelope_method: str = "edgeworth",
+    color: Optional[int] = 5,
+    z_range: RangeT = None,               # optional clamp of z-lims (display only)
+    xy_range: RangeT = None,              # optional clamp of x/y (µm) display/bins
+    bins: BinsT = None,                   # int or (None, int) → number of position bins
+    bin_width: Optional[Number] = None,   # µm; overrides bins for position axis
+    dpi: int = 100,
+    path: Optional[str] = None,           # when which='both', adds _x/_y suffixes
     apply_style: bool = True,
     k: float = 1.0,
-    plot: bool = True
+    plot: bool = True,
+    top_stat: Optional[str] = None        # 'fwhm' or 'std' or None
 ):
     """
-    Plot caustics as 2D scatter/hist2d:
-      - X vs z (µm vs m)
-      - Y vs z (µm vs m)
+    Plane-centered 2D histogram caustic (no other modes allowed).
 
-    Parameters mirror the other viz helpers for consistency.
+    - Z is binned with one **contiguous** column per plane (no gaps).
+    - X/Y use **fixed** bin width (if `bin_width`) or a fixed number of bins (`bins`).
+    - Optional top panel shows FWHM or σ (STD) vs z.
+
+    Notes
+    -----
+    * Units: position on the map is in µm (input arrays in meters are scaled by 1e6).
+    * Large beams are safe: uses numpy.histogram2d + pcolormesh (no KDE, no scatter).
     """
     if apply_style:
         start_plotting(k)
 
+    # --- inputs ---
     z = np.asarray(caustic["optical_axis"], dtype=float)
     cm = caustic.get("caustic", {})
-    Xmat = cm.get("X", None)
-    Ymat = cm.get("Y", None)
+    Xmat = cm.get("X", None); Ymat = cm.get("Y", None)
+    if which in ("x", "both") and Xmat is None:
+        raise ValueError("X matrix not present in caustic['caustic']['X'].")
+    if which in ("y", "both") and Ymat is None:
+        raise ValueError("Y matrix not present in caustic['caustic']['Y'].")
 
-    def _stack(mat):
-        """Return stacked (z_stacked, pos_um) for a matrix of shape (P, N)."""
-        if mat is None:
-            return None, None
+    z_edges = _make_plane_centered_edges(z)
+
+    def _apply_z_display_limits(ax):
+        if z_range is not None and all(v is not None for v in z_range):
+            ax.set_xlim(float(z_range[0]), float(z_range[1]))
+        else:
+            ax.set_xlim(z_edges[0], z_edges[-1])
+
+    def _pos_edges(mat, rng):
         mat = np.asarray(mat, dtype=float)
-        if mat.ndim != 2 or mat.shape[0] != z.size:
-            raise ValueError("caustic['caustic'][X/Y] must have shape (len(z), N).")
-        P, N = mat.shape
-        z_stacked = np.repeat(z, N)
-        pos_um    = mat.reshape(P * N) * 1e6
-        return z_stacked, pos_um
+        pos = mat.reshape(-1) * 1e6  # meters -> µm
+        if rng is None or rng[0] is None or rng[1] is None:
+            finite = pos[np.isfinite(pos)]
+            lo = float(np.min(finite)) if finite.size else 0.0
+            hi = float(np.max(finite)) if finite.size else 1.0
+            if rng is not None:
+                lo = rng[0] if rng[0] is not None else lo
+                hi = rng[1] if rng[1] is not None else hi
+        else:
+            lo, hi = float(rng[0]), float(rng[1])
 
-    def _suffix(base: Optional[str], suf: str) -> Optional[str]:
-        if not base:
-            return None
-        stem, ext = (base.rsplit(".", 1) + ["png"])[:2]
-        return f"{stem}{suf}.{ext}"
+        nb = None
+        if isinstance(bins, (tuple, list)) and len(bins) == 2 and isinstance(bins[1], int):
+            nb = bins[1]
+        elif isinstance(bins, int):
+            nb = bins
+        return _edges_from_span(lo, hi, bin_width=bin_width, bins=nb)
 
-    out = []
+    def _plot_one(axis_key: str, mat):
+        pos_edges = _pos_edges(mat, xy_range)
+        P, N = np.asarray(mat).shape
+        z_rep = np.repeat(z, N)
+        pos_um = np.asarray(mat, dtype=float).reshape(P * N) * 1e6
+        H, ze, xe = np.histogram2d(z_rep, pos_um, bins=[z_edges, pos_edges])
 
+        if top_stat:
+            fig = plt.figure(figsize=(10, 5.0), dpi=dpi)
+            gs = fig.add_gridspec(
+                nrows=2, ncols=2,
+                width_ratios=[20, 1],    # main plot + colorbar
+                height_ratios=[2, 4],    # top panel shorter than main
+                hspace=0.05, wspace=0.05
+            )
+            axtop = fig.add_subplot(gs[0, 0])
+            ax    = fig.add_subplot(gs[1, 0])
+            cax   = fig.add_subplot(gs[:, 1])  # spans both rows, vertical colorbar
+        else:
+            fig, ax = plt.subplots(figsize=(10, 4.0), dpi=dpi)
+            axtop = None
+            cax = None
+
+        mesh = ax.pcolormesh(ze, xe, H.T, shading='flat', cmap=_color_palette(color or 2))
+        if aspect_ratio:
+            ax.set_aspect('equal', adjustable='box')
+        ax.set_xlabel(r"$z$ [m]")
+        ax.set_ylabel(r"$%s$ [$\mu$m]" % ("x" if axis_key == "x" else "y"))
+        ax.grid(True, which="both", color="gray", linestyle=":", linewidth=0.5)
+        ax.tick_params(direction="in", top=True, right=True)
+        for spine in ("top", "right", "bottom", "left"):
+            ax.spines[spine].set_visible(True)
+            ax.spines[spine].set_color("black")
+        _apply_z_display_limits(ax)
+
+        if cax is not None:
+            cb = fig.colorbar(mesh, cax=cax, orientation='vertical')
+        else:
+            cb = fig.colorbar(mesh, ax=ax)
+        cb.set_label("rays")
+
+        if axtop is not None:
+            if top_stat.lower() == "fwhm":
+                arr = np.asarray(caustic.get("fwhm", {}).get(axis_key, None), dtype=float)
+                label = "FWHM [µm]"; scale = 1e6
+            elif top_stat.lower() == "std":
+                arr = np.asarray(caustic.get("moments", {}).get(axis_key, {}).get("std", None), dtype=float)
+                label = "σ [µm]"; scale = 1e6
+            else:
+                arr = None
+            if arr is not None and arr.size == z.size:
+                axtop.plot(z, arr * scale, lw=1.5)
+                axtop.set_ylabel(label)
+                axtop.grid(True, which="both", color="gray", linestyle=":", linewidth=0.5)
+                axtop.tick_params(direction="in", top=True, right=True)
+                for spine in ("top", "right", "bottom", "left"):
+                    axtop.spines[spine].set_visible(True)
+                    axtop.spines[spine].set_color("black")
+                axtop.set_xticklabels([])
+                _apply_z_display_limits(axtop)
+
+        out_path = path
+        if path and which == "both":
+            stem, ext = (path.rsplit(".", 1) + ["png"])[:2]
+            suffix = "_x_vs_z" if axis_key == "x" else "_y_vs_z"
+            out_path = f"{stem}{suffix}.{ext}"
+        if out_path:
+            fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+
+        return fig, ax
+
+    results = []
     if which in ("x", "both"):
-        zx, xu = _stack(Xmat)
-        if zx is None:
-            raise ValueError("X matrix not present in caustic['caustic']['X'].")
-        fig_x, axes_x = _common_xy_plot(
-            x=zx, y=xu,
-            x_label=r"$z$ [m]", y_label=r"$x$ [$\mu$m]",
-            mode=_resolve_mode(mode),
-            aspect_ratio=aspect_ratio,
-            color=color,
-            x_range=z_range,
-            y_range=xy_range,
-            bins=bins,
-            bin_width=bin_width,
-            bin_method=bin_method,
-            dpi=dpi,
-            path=_suffix(path, "_x_vs_z") if (which == "both") else path,
-            showXhist=showXhist,
-            showYhist=showYhist,
-            envelope=envelope,
-            envelope_method=envelope_method,
-        )
-        out.append((fig_x, axes_x))
-
+        results.append(_plot_one("x", np.asarray(Xmat, dtype=float)))
     if which in ("y", "both"):
-        zy, yu = _stack(Ymat)
-        if zy is None:
-            raise ValueError("Y matrix not present in caustic['caustic']['Y'].")
-        fig_y, axes_y = _common_xy_plot(
-            x=zy, y=yu,
-            x_label=r"$z$ [m]", y_label=r"$y$ [$\mu$m]",
-            mode=_resolve_mode(mode),
-            aspect_ratio=aspect_ratio,
-            color=color,
-            x_range=z_range,
-            y_range=xy_range,
-            bins=bins,
-            bin_width=bin_width,
-            bin_method=bin_method,
-            dpi=dpi,
-            path=_suffix(path, "_y_vs_z") if (which == "both") else path,
-            showXhist=showXhist,
-            showYhist=showYhist,
-            envelope=envelope,
-            envelope_method=envelope_method,
-        )
-        out.append((fig_y, axes_y))
-
+        results.append(_plot_one("y", np.asarray(Ymat, dtype=float)))
     if plot:
         plt.show()
-
-    if which == "both":
-        return tuple(out)
-    return out[0]
+    return results if which == "both" else results[0]
 
 def plot_energy(
     df: pd.DataFrame,
@@ -342,14 +379,14 @@ def plot_energy(
     bins: Optional[Union[int, Tuple[int, int]]] = None,   # int → auto for X; tuple ignored (kept for symmetry)
     bin_width: Optional[Number] = None,
     bin_method: int = 0,
-    dpi: int = 300,
+    dpi: int = 100,
     path: Optional[str] = None,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
 ) -> Tuple[plt.Figure, plt.Axes]:
-    """Energy distribution N vs E (eV), 1D histogram in counts."""
-    fig_siz = 3
+    """energy distribution N vs E (eV), 1D histogram in counts."""
+    fig_siz = 4.8
 
     if apply_style:
         start_plotting(k)
@@ -360,8 +397,8 @@ def plot_energy(
     e = e[np.isfinite(e)]
     if e.size == 0:
         fig, ax = plt.subplots(figsize=(fig_siz*6.4/4.8, fig_siz), dpi=dpi)
-        ax.set_xlabel("Energy [eV]")
-        ax.set_ylabel("[counts]")
+        ax.set_xlabel("energy [eV]")
+        ax.set_ylabel("[rays]")
         ax.text(0.5, 0.5, "no finite energies", ha="center", va="center", transform=ax.transAxes)
         if path:
             fig.savefig(path, dpi=dpi, bbox_inches="tight")
@@ -389,7 +426,7 @@ def plot_energy(
     ax.set_ylim(0, 1.05 * max(1, counts.max()))
     ax.grid(which="major", linestyle="--", linewidth=0.3, color="dimgrey")
     ax.grid(which="minor", linestyle="--", linewidth=0.3, color="lightgrey")
-    ax.set_xlabel("Energy [eV]")
+    ax.set_xlabel("energy [eV]")
     ax.set_ylabel("[rays]")
     ax.locator_params(nbins=5)
 
@@ -410,17 +447,17 @@ def plot_energy_vs_intensity(
     bins: BinsT = None,
     bin_width: Optional[Number] = None,
     bin_method: int = 0,
-    dpi: int = 300,
+    dpi: int = 100,
     path: Optional[str] = None,
     showXhist: bool = True,
     showYhist: bool = True,
-    envelope: bool = False,              # envelope is meaningful on Energy; on Intensity it's bounded in [0,1]
+    envelope: bool = False,              # envelope is meaningful on energy; on Intensity it's bounded in [0,1]
     envelope_method: str = "edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
-    """2D plot with X=Energy [eV], Y=Intensity [arb], with optional marginals/envelopes; never silently shows."""
+    """2D plot with X=energy [eV], Y=Intensity [arb], with optional marginals/envelopes; never silently shows."""
     if apply_style:
         start_plotting(k)
 
@@ -429,7 +466,7 @@ def plot_energy_vs_intensity(
     x = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)         # eV
     y = pd.to_numeric(df2["intensity"], errors="coerce").to_numpy(dtype=float)      # [0,1]
     # labels
-    xl = r"$E$ [eV]"
+    xl = r"energy [eV]"
     yl = r"$I$ [arb]"
     print(_resolve_mode(mode))
     fig, axes = _common_xy_plot(
@@ -474,19 +511,16 @@ def start_plotting(k: float = 1.0) -> None:
         "text.usetex": False,
         "font.family": "DejaVu Serif",
         "font.serif": ["Times New Roman"],
-    })
-
-    plt.rc("axes",   titlesize=12. * k, labelsize=12. * k)
-    plt.rc("xtick",  labelsize=11. * k)
-    plt.rc("ytick",  labelsize=11. * k)
-    plt.rc("legend", fontsize=11.* k)
-
-    plt.rcParams.update({
         "axes.grid": False,
         "savefig.bbox": "tight",
         "axes.spines.right": True,
         "axes.spines.top":   True,
     })
+
+    plt.rc("axes",   titlesize=15. * k, labelsize=14 * k)
+    plt.rc("xtick",  labelsize=13. * k)
+    plt.rc("ytick",  labelsize=13. * k)
+    plt.rc("legend", fontsize=13.* k)
 
     
 @contextmanager
@@ -541,7 +575,7 @@ def _common_xy_plot(
 
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
-    fig_siz = 3
+    fig_siz = 6.4
     # --- figure & rectangles (your math, lightly tidied) ---
     if aspect_ratio:
         fig_w, fig_h = fig_siz, fig_siz
@@ -609,7 +643,7 @@ def _common_xy_plot(
                     linewidth=1, edgecolor='steelblue', histtype='step', alpha=1)
         ax_histy.set_ylim(y_range)
         hy, _ = np.histogram(y, nb_of_bins[1], range=y_range)
-        ax_histy.set_xlim(-0.05 * hx.max(), 1.05 * max(1, hy.max()))
+        ax_histy.set_xlim(-0.05 * hy.max(), 1.05 * max(1, hy.max()))
         ax_histy.locator_params(tight=True, nbins=3)
         ax_histy.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histy.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
@@ -622,7 +656,7 @@ def _common_xy_plot(
     ax_image.set_ylim(y_range)
 
     if mode == 'scatter':
-        s, edgecolors, marker, linewidths = 1, 'face', '.', 0.1
+        s, edgecolors, marker, linewidths = 2.5, 'face', '.', 1
         if color is None or color == 0:
             im = ax_image.scatter(x, y, color=_color_palette(0), alpha=1,
                                   edgecolors=edgecolors, s=s, marker=marker, linewidths=linewidths)
@@ -633,7 +667,7 @@ def _common_xy_plot(
             cmap = _color_palette(color)
             clr = cmap(z)
             im = ax_image.scatter(x, y, color=clr, alpha=1, edgecolors=edgecolors,
-                                  s=s, marker=marker, linewidths=linewidths * 2)
+                                  s=s, marker=marker, linewidths=linewidths)
         ax_image.grid(linestyle='--', linewidth=0.3, color='dimgrey')
 
     elif mode == 'hist2d':
@@ -687,7 +721,6 @@ def _prep_beam_xy(
 # utilities
 # ---------------------------------------------------------------------------
 
-
 def _resolve_mode(mode: ModeT) -> Literal["scatter", "hist2d"]:
     """Normalize plotting mode/aliases and fallback to 'hist2d' with a warning."""
     if not isinstance(mode, str):
@@ -737,6 +770,9 @@ def _auto_bins(
         n = data.size
         if bin_width is not None:
             bins.append(int((np.amax(data)-np.amin(data))/bin_width))
+        elif bin_method == -1:  # equidistribution
+            nsgima = 6
+            bins.append(int(np.std(data)/nsgima))
         elif bin_method == 0:  # sqrt
             bins.append(int(np.sqrt(n)))
         elif bin_method == 1:  # Sturge
@@ -758,6 +794,7 @@ def _color_palette(color: Optional[int]) -> Union[Tuple[float, float, float], Co
     if color == 2: return cm.plasma
     if color == 3: return cm.turbo
     if color == 4: return cm.magma
+    if color == 5: return cm.terrain
     # unknown: default to viridis as a safe colormap
     return cm.viridis
 
@@ -801,3 +838,29 @@ def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
         ax.plot(counts_curve, axis, color=color, linewidth=0.5, alpha=1)
     else:
         ax.plot(axis, counts_curve, color=color, linewidth=0.5, alpha=1)
+
+def _make_plane_centered_edges(z: np.ndarray) -> np.ndarray:
+    z = np.asarray(z, dtype=float)
+    if z.size == 0:
+        return np.array([0.0, 1.0])
+    if z.size == 1:
+        dz = 1e-3 if np.isfinite(z[0]) else 1.0
+        return np.array([z[0] - 0.5*dz, z[0] + 0.5*dz])
+    dz = np.diff(z)
+    mids = z[:-1] + 0.5*dz
+    first = z[0] - 0.5*dz[0]
+    last  = z[-1] + 0.5*dz[-1]
+    return np.concatenate([[first], mids, [last]])
+
+def _edges_from_span(lo: float, hi: float, *, bin_width: Optional[Number], bins: Optional[int]) -> np.ndarray:
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        lo, hi = 0.0, 1.0
+    if bin_width is not None:
+        bw = float(bin_width)
+        if bw <= 0:
+            raise ValueError("bin_width must be positive")
+        n = int(np.ceil((hi - lo) / bw))
+        return np.linspace(lo, lo + n*bw, n+1)
+    if bins is None:
+        bins = 200
+    return np.linspace(lo, hi, int(bins)+1)
