@@ -772,7 +772,8 @@ def _auto_bins(
             bins.append(int((np.amax(data)-np.amin(data))/bin_width))
         elif bin_method == -1:  # equidistribution
             nsgima = 6
-            bins.append(int(np.std(data)/nsgima))
+            bwdth = np.std(data)/nsgima
+            bins.append(int((np.amax(data)-np.amin(data))/bwdth))
         elif bin_method == 0:  # sqrt
             bins.append(int(np.sqrt(n)))
         elif bin_method == 1:  # Sturge

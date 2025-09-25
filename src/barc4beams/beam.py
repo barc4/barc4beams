@@ -8,7 +8,7 @@ The Beam class is a high-level façade that wraps:
 - adapters.to_standard_beam (PyOptiX / SHADOW3 / SHADOW4 → standardized beam)
 - schema.validate_beam (sanity checks)
 - stats.get_statistics (cached statistics)
-- viz plotting functions (beam, divergence, phase space)
+- viz plotting functions (beam, divergence, phase space, caustic)
 - io.save_beam / io.read_beam (HDF5)
 - io.save_json_stats / io.read_json_stats (JSON stats)
 
@@ -21,26 +21,15 @@ Notes
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence, Dict
+from typing import Any, Dict, Literal, Optional, Sequence, Tuple, Union
+
 import pandas as pd
 
-from . import adapters, schema, stats, viz, io
+from . import adapters, caustics, io, schema, stats, viz
 
 
 class Beam:
-    """
-    Unified interface for standardized beams.
-
-    Parameters
-    ----------
-    obj : Any or sequence of Any
-        A PyOptiX DataFrame, SHADOW3/4 beam object, or already standardized
-        pandas.DataFrame. May also be a sequence of such objects for multiple
-        runs.
-    code : str, optional
-        Backend hint passed to ``adapters.to_standard_beam``. Ignored if obj
-        is already a standardized DataFrame.
-    """
+    """Unified interface for standardized beams."""
 
     def __init__(self, obj: Any, code: Optional[str] = None) -> None:
         if isinstance(obj, (list, tuple)):
@@ -48,7 +37,6 @@ class Beam:
         else:
             self._runs = [self._standardize(obj, code)]
 
-        # validate all runs
         for df in self._runs:
             schema.validate_beam(df)
 
@@ -59,13 +47,11 @@ class Beam:
     # ------------------------------------------------------------------
     @classmethod
     def from_h5(cls, path: str) -> "Beam":
-        """Load beam(s) from an HDF5 file."""
         df = io.read_beam(path)
         return cls(df)
 
     @classmethod
     def from_df(cls, df: pd.DataFrame) -> "Beam":
-        """Wrap an already standardized DataFrame."""
         schema.validate_beam(df)
         return cls(df)
 
@@ -79,24 +65,20 @@ class Beam:
     # ------------------------------------------------------------------
     @property
     def n_runs(self) -> int:
-        """Number of runs stored in this Beam."""
         return len(self._runs)
 
     @property
     def df(self) -> pd.DataFrame:
-        """Return the single standardized DataFrame (error if multiple)."""
         if self.n_runs != 1:
             raise ValueError("Beam contains multiple runs; access .runs instead.")
         return self._runs[0]
 
     @property
     def runs(self) -> Sequence[pd.DataFrame]:
-        """Return the list of standardized DataFrames."""
         return self._runs
 
     @property
     def stats(self) -> Dict:
-        """Return cached statistics (aggregate if multiple runs)."""
         if self._stats_cache is None:
             self._stats_cache = stats.get_statistics(self._runs)
         return self._stats_cache
@@ -104,42 +86,289 @@ class Beam:
     # ------------------------------------------------------------------
     # methods
     # ------------------------------------------------------------------
-    def print_stats(self, verbose: bool = True) -> None:
-        """Pretty-print statistics to stdout."""
+    def print_stats(self, *, verbose: bool = True) -> None:
         _ = stats.get_statistics(self._runs, verbose=verbose)
 
-    # --- plotting (only if single run) ---
-    def plot_beam(self, **kwargs):
-        """Plot spatial footprint (X vs Y)."""
+    # ------------------------------------------------------------------
+    # caustics
+    # ------------------------------------------------------------------
+    def compute_caustic(
+        self,
+        *,
+        n_points: int = 501,
+        start: float = -0.5,
+        finish: float = 0.5,
+    ) -> Dict:
+        if self.n_runs != 1:
+            raise ValueError("Caustic computation requires a single run (got multiple).")
+
+        res = caustics.compute_caustic(
+            beam=self.df,
+            n_points=n_points,
+            start=start,
+            finish=finish,
+            return_points=True,
+        )
+
+        return res
+
+    # ------------------------------------------------------------------
+    # plotting (only allowed for single run))
+    # ------------------------------------------------------------------
+
+    def plot_beam(
+        self,
+        *,
+        mode: str = "scatter",
+        aspect_ratio: bool = True,
+        color: int = 1,
+        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        bins: Optional[Union[int, Tuple[int, int]]] = None,
+        bin_width: Optional[float] = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: Optional[str] = None,
+        showXhist: bool = True,
+        showYhist: bool = True,
+        envelope: bool = True,
+        envelope_method: str = "edgeworth",
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
-        return viz.plot_beam(self.df, **kwargs)
+        return viz.plot_beam(
+            df=self.df,
+            mode=mode,
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=x_range,
+            y_range=y_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope=envelope,
+            envelope_method=envelope_method,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
 
-    def plot_divergence(self, **kwargs):
-        """Plot angular footprint (dX vs dY)."""
+    def plot_divergence(
+        self,
+        *,
+        mode: str = "scatter",
+        aspect_ratio: bool = False,
+        color: int = 2,
+        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        bins: Optional[Union[int, Tuple[int, int]]] = None,
+        bin_width: Optional[float] = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: Optional[str] = None,
+        showXhist: bool = True,
+        showYhist: bool = True,
+        envelope: bool = True,
+        envelope_method: str = "edgeworth",
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
-        return viz.plot_divergence(self.df, **kwargs)
+        return viz.plot_divergence(
+            df=self.df,
+            mode=mode,
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=x_range,
+            y_range=y_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope=envelope,
+            envelope_method=envelope_method,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
 
-    def plot_phase_space(self, **kwargs):
-        """Plot phase space (X–dX / Y–dY)."""
+    def plot_phase_space(
+        self,
+        *,
+        direction: str = "both",
+        mode: str = "scatter",
+        aspect_ratio: bool = False,
+        color: int = 3,
+        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        bins: Optional[Union[int, Tuple[int, int]]] = None,
+        bin_width: Optional[float] = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: Optional[str] = None,
+        showXhist: bool = True,
+        showYhist: bool = True,
+        envelope: bool = True,
+        envelope_method: str = "edgeworth",
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
-        return viz.plot_phase_space(self.df, **kwargs)
+        return viz.plot_phase_space(
+            df=self.df,
+            direction=direction,
+            mode=mode,
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=x_range,
+            y_range=y_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope=envelope,
+            envelope_method=envelope_method,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
 
-    def plot_energy(self, **kwargs):
-        """Plot energy distribution (rays vs E)."""
+    def plot_energy(
+        self,
+        *,
+        bins: Optional[Union[int, Tuple[int, int]]] = None,
+        bin_width: Optional[float] = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: Optional[str] = None,
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
-        return viz.plot_energy(self.df, **kwargs)
+        return viz.plot_energy(
+            df=self.df,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
 
-    def plot_energy_vs_intensity(self, **kwargs):
-        """Plot intensity vs energy distribution."""
+    def plot_energy_vs_intensity(
+        self,
+        *,
+        mode: str = "scatter",
+        aspect_ratio: bool = False,
+        color: Optional[int] = 3,
+        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        bins: Optional[Union[int, Tuple[int, int]]] = None,
+        bin_width: Optional[float] = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: Optional[str] = None,
+        showXhist: bool = True,
+        showYhist: bool = True,
+        envelope: bool = False,
+        envelope_method: str = "edgeworth",
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
-        return viz.plot_energy_vs_intensity(self.df, **kwargs)
+        return viz.plot_energy_vs_intensity(
+            df=self.df,
+            mode=mode,
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=x_range,
+            y_range=y_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope=envelope,
+            envelope_method=envelope_method,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
 
-    # --- saving ---
+    def plot_caustic(
+        self,
+        *,
+        which: Literal["x", "y", "both"] = "both",
+        aspect_ratio: bool = False,
+        color: Optional[int] = 5,
+        z_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
+        xy_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
+        bins: Optional[int | Tuple[Optional[int], int]] = None,
+        bin_width: Optional[float] = None,
+        dpi: int = 100,
+        path: Optional[str] = None,
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+        top_stat: Optional[str] = None,
+
+        n_points: int = 501,
+        start: float = -0.5,
+        finish: float = 0.5,
+        return_points: bool = True,
+    ):
+        """Calculate, then plot the beam caustic"""
+        ca = self.compute_caustic(
+            n_points=n_points,
+            start=start,
+            finish=finish,
+            return_points=return_points,
+        )
+        return viz.plot_caustic(
+            caustic=ca,
+            which=which,
+            aspect_ratio=aspect_ratio,
+            color=color,
+            z_range=z_range,
+            xy_range=xy_range,
+            bins=bins,
+            bin_width=bin_width,
+            dpi=dpi,
+            path=path,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+            top_stat=top_stat,
+        )
+
+    # ------------------------------------------------------------------
+    # saving
+    # ------------------------------------------------------------------
     def save(self, path: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
         """
         Save beam to HDF5 and stats to JSON.
@@ -148,7 +377,6 @@ class Beam:
         A sibling JSON file (same base name) will contain the statistics.
         """
         io.save_beam(self._runs[0] if self.n_runs == 1 else self._runs, path)
-
         base = path.rsplit(".", 1)[0]
         json_path = f"{base}.json"
         io.save_json_stats(self.stats, json_path, meta=meta)
