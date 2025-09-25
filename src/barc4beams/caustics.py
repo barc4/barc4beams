@@ -103,21 +103,18 @@ def compute_caustic(
     fwhm_x = np.empty(n_points)
     fwhm_y = np.empty(n_points)
 
-    fx = np.empty(n_points)   # focal distance from plane z_i (X plane)
-    fy = np.empty(n_points)   # focal distance from plane z_i (Y plane)
+    fx = np.empty(n_points)
+    fy = np.empty(n_points)
 
     for i in range(n_points):
-        # Moments
         mx, sx, gx, kx = stats.calc_moments_from_particle_distribution(X[i])
         my, sy, gy, ky = stats.calc_moments_from_particle_distribution(Y[i])
         mu_x[i], sig_x[i], sk_x[i], ku_x[i] = mx, sx, gx, kx
         mu_y[i], sig_y[i], sk_y[i], ku_y[i] = my, sy, gy, ky
 
-        # FWHM (with your flat-top fallback)
         fwhm_x[i] = stats.calc_fwhm_from_particle_distribution(X[i], bins=None)
         fwhm_y[i] = stats.calc_fwhm_from_particle_distribution(Y[i], bins=None)
 
-        # Focal distance from the *current plane*: use positions at z_i and the same divergences
         fx[i] = stats.calc_focal_distance_from_particle_distribution(X[i], dX)
         fy[i] = stats.calc_focal_distance_from_particle_distribution(Y[i], dY)
 
@@ -130,8 +127,8 @@ def compute_caustic(
         "caustic": caustic_block,
         "optical_axis": z,
         "moments": {
-            "x": {"mean": mu_x, "std": sig_x, "skew": sk_x, "kurtosis_excess": ku_x},
-            "y": {"mean": mu_y, "std": sig_y, "skew": sk_y, "kurtosis_excess": ku_y},
+            "x": {"mean": mu_x, "std": sig_x, "skewness": sk_x, "kurtosis": ku_x},
+            "y": {"mean": mu_y, "std": sig_y, "skewness": sk_y, "kurtosis": ku_y},
         },
         "fwhm": {"x": fwhm_x, "y": fwhm_y},
         "focal_length": {"x": fx, "y": fy},
