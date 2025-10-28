@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: CECILL-2.1
+# Copyright (c) 2025 Synchrotron SOLEIL
 """
 caustics.py - free space ray tracing.
 """

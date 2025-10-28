@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: CECILL-2.1
 # Copyright (c) 2025 Synchrotron SOLEIL
 """
 schema.py - definition and validation of the standard beam format.

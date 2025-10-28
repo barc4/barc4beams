@@ -346,7 +346,7 @@ class Beam:
             n_points=n_points,
             start=start,
             finish=finish,
-            return_points=return_points,
+            # return_points=return_points,
         )
         return viz.plot_caustic(
             caustic=ca,
