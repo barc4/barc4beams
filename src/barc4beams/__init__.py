@@ -8,7 +8,7 @@ barc4beams — analysis and plotting for ray-traced photon beams.
 from ._version import __version__
 from .adapters import merge_standard_beams, to_standard_beam
 from .beam import Beam
-from .caustics import compute_caustic
+from .propagation import compute_caustic
 from .io import read_beam, read_json_stats, save_beam, save_json_stats
 from .stats import calc_envelope_from_moments, get_focal_distance, get_statistics
 from .viz import (
