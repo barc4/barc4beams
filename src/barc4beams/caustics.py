@@ -69,7 +69,6 @@ def compute_caustic(
     if "lost_ray_flag" in df.columns:
         df = df.loc[df["lost_ray_flag"] == 0]
 
-    # empty after filtering → structured NaN output
     z = np.linspace(start, finish, n_points)
     if df.shape[0] == 0:
         nan_line = np.full(n_points, np.nan)
@@ -85,18 +84,15 @@ def compute_caustic(
         }
         return out
 
-    # --- base arrays ---
     X0 = df["X"].to_numpy(dtype=float)
     Y0 = df["Y"].to_numpy(dtype=float)
     dX = df["dX"].to_numpy(dtype=float)
     dY = df["dY"].to_numpy(dtype=float)
     N = X0.size
 
-    # --- straight-line propagation ---
     X = X0[np.newaxis, :] + z[:, np.newaxis] * dX[np.newaxis, :]
     Y = Y0[np.newaxis, :] + z[:, np.newaxis] * dY[np.newaxis, :]
 
-    # --- per-plane stats via barc4beams.stats ---
     mu_x  = np.empty(n_points); sig_x = np.empty(n_points)
     sk_x  = np.empty(n_points); ku_x  = np.empty(n_points)
     mu_y  = np.empty(n_points); sig_y = np.empty(n_points)

@@ -569,9 +569,9 @@ def _common_xy_plot(
     x_range = _resolve_range(x, x_range)
     y_range = _resolve_range(y, y_range)
 
-    if aspect_ratio is True:
-        x_range = (np.min([x_range[0], y_range[0]]), np.max([x_range[1], y_range[1]]))
-        y_range = x_range
+    # if aspect_ratio is True:
+    #     x_range = (np.min([x_range[0], y_range[0]]), np.max([x_range[1], y_range[1]]))
+    #     y_range = x_range
 
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
@@ -651,9 +651,6 @@ def _common_xy_plot(
         if envelope:
             _overlay_envelope_on_hist(ax_histy, y, y_range, nb_of_bins[1],
                                     horizontal=True, method=envelope_method)
-    # --- main scatter / hist2d ---
-    ax_image.set_xlim(x_range)
-    ax_image.set_ylim(y_range)
 
     if mode == 'scatter':
         s, edgecolors, marker, linewidths = 2.5, 'face', '.', 1
@@ -676,10 +673,14 @@ def _common_xy_plot(
     else:
         raise ValueError("mode must be 'scatter' or 'hist2d'.")
 
+    # --- main scatter / hist2d ---
+    ax_image.set_xlim(x_range)
+    ax_image.set_ylim(y_range)
+
     # ticks/aspect
     ax_image.locator_params(tight=True, nbins=4)
-    ax_image.set_aspect('auto')
-    # ax_image.set_aspect('equal' if aspect_ratio else 'auto')
+    # ax_image.set_aspect('auto')
+    ax_image.set_aspect('equal' if aspect_ratio else 'auto')
 
     if path is not None:
         fig.savefig(path, dpi=dpi, bbox_inches='tight')
