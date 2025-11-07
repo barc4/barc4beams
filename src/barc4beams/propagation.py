@@ -11,43 +11,9 @@ import pandas as pd
 
 from . import schema, stats
 
-def _propagate_xy(
-    X0: np.ndarray,
-    Y0: np.ndarray,
-    dX: np.ndarray,
-    dY: np.ndarray,
-    z: float | np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Internal helper for free-space propagation.
-
-    Parameters
-    ----------
-    X0, Y0 : np.ndarray
-        Initial positions.
-    dX, dY : np.ndarray
-        Direction cosines (small angles in radians).
-    z : float or np.ndarray
-        Propagation distance(s) in meters.
-        If 1D array, returns broadcasted 2D arrays [len(z), len(X0)].
-
-    Returns
-    -------
-    X, Y : np.ndarray
-        Propagated positions at each z.
-    """
-    X0, Y0, dX, dY = map(np.asarray, (X0, Y0, dX, dY))
-    z = np.asarray(z)
-
-    if z.ndim == 0:
-        X = X0 + z * dX
-        Y = Y0 + z * dY
-    else:
-        X = X0[np.newaxis, :] + z[:, np.newaxis] * dX[np.newaxis, :]
-        Y = Y0[np.newaxis, :] + z[:, np.newaxis] * dY[np.newaxis, :]
-
-    return X, Y
-
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 def propagate(
     beam: pd.DataFrame,
@@ -209,3 +175,44 @@ def caustic(
         "fwhm": {"x": fwhm_x, "y": fwhm_y},
         "focal_length": {"x": fx, "y": fy},
     }
+
+# ---------------------------------------------------------------------------
+# internal helpers
+# ---------------------------------------------------------------------------
+
+def _propagate_xy(
+    X0: np.ndarray,
+    Y0: np.ndarray,
+    dX: np.ndarray,
+    dY: np.ndarray,
+    z: float | np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Internal helper for free-space propagation.
+
+    Parameters
+    ----------
+    X0, Y0 : np.ndarray
+        Initial positions.
+    dX, dY : np.ndarray
+        Direction cosines (small angles in radians).
+    z : float or np.ndarray
+        Propagation distance(s) in meters.
+        If 1D array, returns broadcasted 2D arrays [len(z), len(X0)].
+
+    Returns
+    -------
+    X, Y : np.ndarray
+        Propagated positions at each z.
+    """
+    X0, Y0, dX, dY = map(np.asarray, (X0, Y0, dX, dY))
+    z = np.asarray(z)
+
+    if z.ndim == 0:
+        X = X0 + z * dX
+        Y = Y0 + z * dY
+    else:
+        X = X0[np.newaxis, :] + z[:, np.newaxis] * dX[np.newaxis, :]
+        Y = Y0[np.newaxis, :] + z[:, np.newaxis] * dY[np.newaxis, :]
+
+    return X, Y

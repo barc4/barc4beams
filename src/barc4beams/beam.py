@@ -2,21 +2,10 @@
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
-beam.py — unified interface class for standardized ray-traced beams.
+beam.py — unified interface class for stadandard beams.
 
-The Beam class is a high-level façade that wraps:
-- adapters.to_standard_beam (PyOptiX / SHADOW3 / SHADOW4 → standardized beam)
-- schema.validate_beam (sanity checks)
-- stats.get_statistics (cached statistics)
-- viz plotting functions (beam, divergence, phase space, caustic)
-- io.save_beam / io.read_beam (HDF5)
-- io.save_json_stats / io.read_json_stats (JSON stats)
-
-Notes
------
-- This class does *not* propagate or modify beams — simulation is left to
-  PyOptiX/SHADOW. It only standardizes, stores, analyzes, and plots.
-- May wrap a single beam or multiple runs. Plotting is disabled if multiple.
+The Beam class is a high-level wrapper for methods for propagation,
+statistics, sampling from intensity maps, and plotting.
 """
 
 from __future__ import annotations
@@ -25,13 +14,20 @@ from typing import Any, Dict, Literal, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 
-from . import adapters, propagation, io, schema, stats, viz
+from . import adapters, io, propagation, sampling, schema, stats, viz
 
 
 class Beam:
-    """Unified interface for standardized beams."""
+    """
+    High-level container for standardized photon beams.
 
+    Wraps a validated beam DataFrame and exposes core analysis, propagation,
+    and visualization methods consistent with barc4beams modules.
+    """
     def __init__(self, obj: Any, code: Optional[str] = None) -> None:
+        """
+        Initialize a Beam instance from a validated DataFrame.
+        """
         if isinstance(obj, (list, tuple)):
             self._runs = [self._standardize(o, code) for o in obj]
         else:
@@ -45,15 +41,54 @@ class Beam:
     # ------------------------------------------------------------------
     # construction helpers
     # ------------------------------------------------------------------
-    @classmethod
-    def from_h5(cls, path: str) -> "Beam":
-        df = io.read_beam(path)
-        return cls(df)
 
     @classmethod
     def from_df(cls, df: pd.DataFrame) -> "Beam":
+        """
+        Create a Beam directly from a standard DataFrame.
+        """
         schema.validate_beam(df)
         return cls(df)
+    
+    @classmethod
+    def from_h5(cls, path: str) -> "Beam":
+        """
+        Load a Beam from an HDF5 file written by io.save_beam.
+        """
+        df = io.read_beam(path)
+        return cls(df)
+    
+    @classmethod
+    def from_intensity(
+        cls,
+        *,
+        far_field: dict,
+        near_field: dict | None = None,
+        n_rays: int,
+        energy_eV: float | None = None,
+        wavelength_m: float | None = None,
+        jitter: bool = True,
+        threshold: float | None = None,
+        seed: int | None = 42,
+        z0: float = 0.0,
+        polarization_degree: float = 1.0,
+    ) -> "Beam":
+        """
+        Build a Beam by sampling 2D intensity maps (see sampling.beam_from_intensity).
+        """
+        df = sampling.beam_from_intensity(
+            far_field=far_field,
+            near_field=near_field,
+            n_rays=n_rays,
+            energy_eV=energy_eV,
+            wavelength_m=wavelength_m,
+            jitter=jitter,
+            threshold=threshold,
+            seed=seed,
+            z0=z0,
+            polarization_degree=polarization_degree,
+        )
+        return cls.from_df(df)
 
     def _standardize(self, obj: Any, code: Optional[str]) -> pd.DataFrame:
         if isinstance(obj, pd.DataFrame):
@@ -77,17 +112,15 @@ class Beam:
     def runs(self) -> Sequence[pd.DataFrame]:
         return self._runs
 
-    @property
-    def stats(self) -> Dict:
-        if self._stats_cache is None:
-            self._stats_cache = stats.get_statistics(self._runs)
-        return self._stats_cache
+    # ------------------------------------------------------------------
+    # stats
+    # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # methods
-    # ------------------------------------------------------------------
-    def print_stats(self, *, verbose: bool = True) -> None:
-        _ = stats.get_statistics(self._runs, verbose=verbose)
+    def stats(self, *, verbose: bool = False) -> dict:
+        """
+        Compute descriptive beam statistics (see stats.get_statistics).
+        """
+        return stats.get_statistics(self.df, verbose=verbose)
 
     # ------------------------------------------------------------------
     # free-space propagation
@@ -100,13 +133,7 @@ class Beam:
         verbose: bool = False,
     ) -> "Beam":
         """
-        Return a NEW Beam propagated in free space by `z_offset` meters.
-
-        Notes
-        -----
-        - Single-run only (raises if Beam wraps multiple runs).
-        - Delegates to `propagation.propagate(df, z_offset)`, which updates/adds 'Z'. 
-        - If `verbose=True`, prints stats of the propagated beam.
+        Return a new Beam propagated through free space by `z_offset` [m].
         """
         if self.n_runs != 1:
             raise ValueError("Free-space propagation requires a single run (got multiple).")
@@ -124,6 +151,9 @@ class Beam:
         start: float = -0.5,
         finish: float = 0.5,
     ) -> Dict:
+        """
+        Compute the free-space caustic of this Beam (see propagation.caustic).
+        """
         if self.n_runs != 1:
             raise ValueError("Caustic computation requires a single run (got multiple).")
 
@@ -136,7 +166,7 @@ class Beam:
         return res
 
     # ------------------------------------------------------------------
-    # plotting (only allowed for single run))
+    # plotting (only allowed for single run)
     # ------------------------------------------------------------------
 
     def plot_beam(
@@ -161,6 +191,9 @@ class Beam:
         plot: bool = True,
         z_offset: float = 0.0,
     ):
+        """
+        Plot the spatial footprint (X vs Y) with optional propagation offset.
+        """
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_beam(
@@ -207,6 +240,9 @@ class Beam:
         plot: bool = True,
         z_offset: float = 0.0,
     ):
+        """
+        Plot the angular distribution (dX vs dY).
+        """
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_divergence(
@@ -254,6 +290,9 @@ class Beam:
         plot: bool = True,
         z_offset: float = 0.0, 
     ):
+        """
+        Plot the phase-space diagram (X vs dX or Y vs dY).
+        """
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_phase_space(
@@ -291,6 +330,9 @@ class Beam:
         k: float = 1.0,
         plot: bool = True,
     ):
+        """
+        Plot the energy distribution of the beam.
+        """
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_energy(
@@ -326,6 +368,9 @@ class Beam:
         k: float = 1.0,
         plot: bool = True,
     ):
+        """
+        Plot beam intensity as a function of photon energy.
+        """
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_energy_vs_intensity(
@@ -369,7 +414,9 @@ class Beam:
         start: float = -0.5,
         finish: float = 0.5,
     ):
-        """Calculate, then plot the beam caustic"""
+        """
+        Plot the caustic map computed from `self.caustic()`.
+        """
         ca = self.compute_caustic(
             n_points=n_points,
             start=start,
