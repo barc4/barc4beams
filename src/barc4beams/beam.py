@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-3.0-only
+# SPDX-License-Identifier: CECILL-2.1
 # Copyright (c) 2025 Synchrotron SOLEIL
 
 """
@@ -25,7 +25,7 @@ from typing import Any, Dict, Literal, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 
-from . import adapters, caustics, io, schema, stats, viz
+from . import adapters, propagation, io, schema, stats, viz
 
 
 class Beam:
@@ -90,9 +90,34 @@ class Beam:
         _ = stats.get_statistics(self._runs, verbose=verbose)
 
     # ------------------------------------------------------------------
-    # caustics
+    # free-space propagation
     # ------------------------------------------------------------------
-    def compute_caustic(
+
+    def propagate(
+        self,
+        z_offset: float,
+        *,
+        verbose: bool = False,
+    ) -> "Beam":
+        """
+        Return a NEW Beam propagated in free space by `z_offset` meters.
+
+        Notes
+        -----
+        - Single-run only (raises if Beam wraps multiple runs).
+        - Delegates to `propagation.propagate(df, z_offset)`, which updates/adds 'Z'. 
+        - If `verbose=True`, prints stats of the propagated beam.
+        """
+        if self.n_runs != 1:
+            raise ValueError("Free-space propagation requires a single run (got multiple).")
+
+        df2 = propagation.propagate(self.df, z_offset)
+        out = Beam.from_df(df2)
+        if verbose:
+            stats.get_statistics(df2, verbose=True)
+        return out
+    
+    def caustic(
         self,
         *,
         n_points: int = 501,
@@ -102,14 +127,12 @@ class Beam:
         if self.n_runs != 1:
             raise ValueError("Caustic computation requires a single run (got multiple).")
 
-        res = caustics.compute_caustic(
+        res = propagation.caustic(
             beam=self.df,
             n_points=n_points,
             start=start,
             finish=finish,
-            return_points=True,
         )
-
         return res
 
     # ------------------------------------------------------------------
@@ -122,8 +145,8 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = True,
         color: int = 1,
-        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
-        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
+        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
         bins: Optional[Union[int, Tuple[int, int]]] = None,
         bin_width: Optional[float] = None,
         bin_method: int = 0,
@@ -136,6 +159,7 @@ class Beam:
         apply_style: bool = True,
         k: float = 1.0,
         plot: bool = True,
+        z_offset: float = 0.0,
     ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
@@ -158,6 +182,7 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
+            z_offset=z_offset,
         )
 
     def plot_divergence(
@@ -166,8 +191,8 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = False,
         color: int = 2,
-        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
-        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None,  
+        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None,  
         bins: Optional[Union[int, Tuple[int, int]]] = None,
         bin_width: Optional[float] = None,
         bin_method: int = 0,
@@ -180,6 +205,7 @@ class Beam:
         apply_style: bool = True,
         k: float = 1.0,
         plot: bool = True,
+        z_offset: float = 0.0,
     ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
@@ -202,6 +228,7 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
+            z_offset=z_offset,
         )
 
     def plot_phase_space(
@@ -211,8 +238,8 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = False,
         color: int = 3,
-        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
-        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None, 
+        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None, 
         bins: Optional[Union[int, Tuple[int, int]]] = None,
         bin_width: Optional[float] = None,
         bin_method: int = 0,
@@ -225,6 +252,7 @@ class Beam:
         apply_style: bool = True,
         k: float = 1.0,
         plot: bool = True,
+        z_offset: float = 0.0, 
     ):
         if self.n_runs != 1:
             raise ValueError("Plotting not supported for multiple runs.")
@@ -248,6 +276,7 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
+            z_offset=z_offset,
         )
 
     def plot_energy(
@@ -339,14 +368,12 @@ class Beam:
         n_points: int = 501,
         start: float = -0.5,
         finish: float = 0.5,
-        return_points: bool = True,
     ):
         """Calculate, then plot the beam caustic"""
         ca = self.compute_caustic(
             n_points=n_points,
             start=start,
             finish=finish,
-            # return_points=return_points,
         )
         return viz.plot_caustic(
             caustic=ca,

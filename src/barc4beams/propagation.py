@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: CECILL-2.1
 # Copyright (c) 2025 Synchrotron SOLEIL
 """
-caustics.py - free space ray tracing.
+propagation.py - free space ray tracing.
 """
 
 from __future__ import annotations
@@ -11,13 +11,94 @@ import pandas as pd
 
 from . import schema, stats
 
-def compute_caustic(
+def _propagate_xy(
+    X0: np.ndarray,
+    Y0: np.ndarray,
+    dX: np.ndarray,
+    dY: np.ndarray,
+    z: float | np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Internal helper for free-space propagation.
+
+    Parameters
+    ----------
+    X0, Y0 : np.ndarray
+        Initial positions.
+    dX, dY : np.ndarray
+        Direction cosines (small angles in radians).
+    z : float or np.ndarray
+        Propagation distance(s) in meters.
+        If 1D array, returns broadcasted 2D arrays [len(z), len(X0)].
+
+    Returns
+    -------
+    X, Y : np.ndarray
+        Propagated positions at each z.
+    """
+    X0, Y0, dX, dY = map(np.asarray, (X0, Y0, dX, dY))
+    z = np.asarray(z)
+
+    if z.ndim == 0:
+        X = X0 + z * dX
+        Y = Y0 + z * dY
+    else:
+        X = X0[np.newaxis, :] + z[:, np.newaxis] * dX[np.newaxis, :]
+        Y = Y0[np.newaxis, :] + z[:, np.newaxis] * dY[np.newaxis, :]
+
+    return X, Y
+
+
+def propagate(
+    beam: pd.DataFrame,
+    z_offset: float,
+) -> pd.DataFrame:
+    """
+    Compute free-space propagation for a standard beam
+
+    Performs:
+        X <- X + z_offset * dX
+        Y <- Y + z_offset * dY
+
+    Parameters
+    ----------
+    beam : pandas.DataFrame
+        Standardized beam. Validated via `schema.validate_beam(beam)`.
+    z_offset : float
+        Propagation distance in meters (positive downstream).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Standard beam at the propagated plane.
+
+    """
+    schema.validate_beam(beam)
+
+    if not np.isfinite(z_offset):
+        raise ValueError("z_offset must be a finite float (meters).")
+
+    df = beam.copy()
+
+    X, Y = _propagate_xy(df["X"].to_numpy(), df["Y"].to_numpy(),
+                         df["dX"].to_numpy(), df["dY"].to_numpy(), z_offset)
+
+    df["X"], df["Y"] = X, Y
+
+    if "Z" in df.columns:
+        df["Z"] = df["Z"] + z_offset
+    else:
+        df["Z"] = np.full(len(df), z_offset, dtype=float)
+
+    return df
+
+
+def caustic(
     beam: pd.DataFrame,
     *,
     n_points: int = 501,
     start: float = -0.5,
     finish: float = 0.5,
-    return_points: bool = True,
 ) -> dict:
     """
     Compute free-space caustics for a standard beam.
@@ -40,9 +121,6 @@ def compute_caustic(
         May be negative.
     finish : float, default 0.5
         Last z. MUST be strictly larger than `start`.
-    return_points : bool, default True
-        If True, return the full X(z), Y(z) arrays. If False, omit them and
-        return only the optical axis and the per-plane moments.
 
     Returns
     -------
@@ -90,8 +168,8 @@ def compute_caustic(
     dY = df["dY"].to_numpy(dtype=float)
     N = X0.size
 
-    X = X0[np.newaxis, :] + z[:, np.newaxis] * dX[np.newaxis, :]
-    Y = Y0[np.newaxis, :] + z[:, np.newaxis] * dY[np.newaxis, :]
+
+    X, Y = _propagate_xy(X0, Y0, dX, dY, z)
 
     mu_x  = np.empty(n_points); sig_x = np.empty(n_points)
     sk_x  = np.empty(n_points); ku_x  = np.empty(n_points)
@@ -117,9 +195,9 @@ def compute_caustic(
         fy[i] = stats.calc_focal_distance_from_particle_distribution(Y[i], dY)
 
     caustic_block = {}
-    if return_points:
-        caustic_block["X"] = X
-        caustic_block["Y"] = Y
+
+    caustic_block["X"] = X
+    caustic_block["Y"] = Y
 
     return {
         "caustic": caustic_block,

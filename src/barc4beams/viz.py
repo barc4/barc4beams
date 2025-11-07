@@ -21,6 +21,7 @@ from matplotlib.colors import Colormap
 from scipy.stats import gaussian_kde, moment
 
 from . import stats
+from .propagation import _propagate_xy
 
 Number = Union[int, float]
 RangeT = Optional[Tuple[Optional[Number], Optional[Number]]]
@@ -55,7 +56,8 @@ def plot_beam(
     envelope_method="edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
-    plot: bool = True
+    plot: bool = True,
+    z_offset: float = 0.0
 ):
     """
     Plot the spatial footprint of a standardized beam (X vs Y), with optional marginals
@@ -103,7 +105,7 @@ def plot_beam(
     if apply_style:
         start_plotting(k)
 
-    x, y, xl, yl = _prep_beam_xy(df, kind="size")
+    x, y, xl, yl = _prep_beam_xy(df, kind="size", z_offset=z_offset)
     fig, axes = _common_xy_plot(
         x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
@@ -133,8 +135,8 @@ def plot_divergence(
     envelope_method="edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
-    plot: bool = True
-
+    plot: bool = True,
+    z_offset: float = 0.0
 ):
     """
     Plot the beam divergence (dX vs dY) in µrad with optional marginals and envelopes.
@@ -147,7 +149,7 @@ def plot_divergence(
     if apply_style:
         start_plotting(k)
 
-    x, y, xl, yl = _prep_beam_xy(df, kind="div")
+    x, y, xl, yl = _prep_beam_xy(df, kind="div", z_offset=0)
     fig, axes = _common_xy_plot(
         x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
@@ -177,8 +179,8 @@ def plot_phase_space(
     envelope_method="edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
-    plot: bool = True
-
+    plot: bool = True,
+    z_offset: float = 0.0,
 ):
     """
     Plot phase space for one or both planes: (X vs dX) and/or (Y vs dY), in µm/µrad.
@@ -205,7 +207,7 @@ def plot_phase_space(
         return f"{stem}{suf}.{ext}"
 
     def _one(d: str, save_path: Optional[str]):
-        x, y, xl, yl = _prep_beam_xy(df, kind="ps", direction=d)
+        x, y, xl, yl = _prep_beam_xy(df, kind="ps", direction=d, z_offset=z_offset)
         return _common_xy_plot(
             x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
             x_range, y_range, bins, bin_width, bin_method, dpi, save_path,
@@ -246,7 +248,7 @@ def plot_caustic(
 
     - Z is binned with one **contiguous** column per plane (no gaps).
     - X/Y use **fixed** bin width (if `bin_width`) or a fixed number of bins (`bins`).
-    - Optional top panel shows FWHM or σ (STD) vs z.
+    - Optional top panel shows FWHM or sigma (STD) vs z.
 
     Notes
     -----
@@ -256,7 +258,6 @@ def plot_caustic(
     if apply_style:
         start_plotting(k)
 
-    # --- inputs ---
     z = np.asarray(caustic["optical_axis"], dtype=float)
     cm = caustic.get("caustic", {})
     Xmat = cm.get("X", None); Ymat = cm.get("Y", None)
@@ -340,7 +341,7 @@ def plot_caustic(
                 label = "FWHM [µm]"; scale = 1e6
             elif top_stat.lower() == "std":
                 arr = np.asarray(caustic.get("moments", {}).get(axis_key, {}).get("std", None), dtype=float)
-                label = "σ [µm]"; scale = 1e6
+                label = "sigma [µm]"; scale = 1e6
             else:
                 arr = None
             if arr is not None and arr.size == z.size:
@@ -391,7 +392,6 @@ def plot_energy(
     if apply_style:
         start_plotting(k)
 
-    # filter alive rays
     df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
     e = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)
     e = e[np.isfinite(e)]
@@ -406,20 +406,16 @@ def plot_energy(
             plt.show()
         return fig, ax
 
-    # binning
     nbx, _ = _auto_bins(e, e, bins, bin_width, bin_method)
     xr = _resolve_range(e, None)
 
-    # compute histogram
     counts, edges = np.histogram(e, bins=nbx, range=xr)
     centers = 0.5 * (edges[:-1] + edges[1:])
 
     fig, ax = plt.subplots(figsize=(fig_siz*6.4/4.8, fig_siz), dpi=dpi)
 
-    # filled area
     ax.fill_between(centers, 0, counts, step="mid", color="steelblue", alpha=0.5)
 
-    # crisp outline
     ax.step(edges[:-1], counts, where="post", color="steelblue", linewidth=1.0)
 
     ax.set_xlim(xr)
@@ -439,8 +435,8 @@ def plot_energy(
 def plot_energy_vs_intensity(
     df: pd.DataFrame,
     *,
-    mode: str = "scatter",              # 'scatter' | 'histo2d' (aliases accepted)
-    aspect_ratio: bool = False,         # default False: ranges are typically very unequal
+    mode: str = "scatter",
+    aspect_ratio: bool = False,
     color: Optional[int] = 3,
     x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
     y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
@@ -451,7 +447,7 @@ def plot_energy_vs_intensity(
     path: Optional[str] = None,
     showXhist: bool = True,
     showYhist: bool = True,
-    envelope: bool = False,              # envelope is meaningful on energy; on Intensity it's bounded in [0,1]
+    envelope: bool = False,
     envelope_method: str = "edgeworth",
     apply_style: bool = True,
     k: float = 1.0,
@@ -461,11 +457,10 @@ def plot_energy_vs_intensity(
     if apply_style:
         start_plotting(k)
 
-    # alive rays only
     df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
     x = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)         # eV
     y = pd.to_numeric(df2["intensity"], errors="coerce").to_numpy(dtype=float)      # [0,1]
-    # labels
+
     xl = r"energy [eV]"
     yl = r"$I$ [arb]"
     print(_resolve_mode(mode))
@@ -576,7 +571,7 @@ def _common_xy_plot(
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
     fig_siz = 6.4
-    # --- figure & rectangles (your math, lightly tidied) ---
+
     if aspect_ratio:
         fig_w, fig_h = fig_siz, fig_siz
         dx = x_range[1] - x_range[0]
@@ -611,7 +606,6 @@ def _common_xy_plot(
     ax_image.set_xlabel(x_label)
     ax_image.set_ylabel(y_label)
 
-    # --- histograms ---
     ax_histx = ax_histy = None
     if showXhist:
         ax_histx = fig.add_axes(rect_histx, sharex=ax_image)
@@ -673,11 +667,9 @@ def _common_xy_plot(
     else:
         raise ValueError("mode must be 'scatter' or 'hist2d'.")
 
-    # --- main scatter / hist2d ---
     ax_image.set_xlim(x_range)
     ax_image.set_ylim(y_range)
 
-    # ticks/aspect
     ax_image.locator_params(tight=True, nbins=4)
     # ax_image.set_aspect('auto')
     ax_image.set_aspect('equal' if aspect_ratio else 'auto')
@@ -692,28 +684,42 @@ def _prep_beam_xy(
     *,
     kind: str,       
     direction: Optional[str] = None,
+    z_offset: float = 0.0
 ):
     """Return (x, y, x_label, y_label) arrays scaled to µm or µrad, filtering alive rays."""
 
+
     if "lost_ray_flag" in df.columns:
         df = df.loc[df["lost_ray_flag"] == 0]
-
-    if kind == "size":
-        x = df["X"].to_numpy(dtype=float) * 1e6
-        y = df["Y"].to_numpy(dtype=float) * 1e6
-        return x, y, r"$x$ [$\mu$m]", r"$y$ [$\mu$m]"
 
     if kind == "div":
         x = df["dX"].to_numpy(dtype=float) * 1e6
         y = df["dY"].to_numpy(dtype=float) * 1e6
         return x, y, r"$x'$ [$\mu$rad]", r"$y'$ [$\mu$rad]"
 
+    X0 = df["X"].to_numpy(dtype=float)
+    Y0 = df["Y"].to_numpy(dtype=float)
+    dX = df["dX"].to_numpy(dtype=float)
+    dY = df["dY"].to_numpy(dtype=float)
+
+    if kind == "size":
+        if z_offset != 0.0:
+            Xp, Yp = _propagate_xy(X0, Y0, dX, dY, float(z_offset))
+        else:
+            Xp, Yp = X0, Y0
+        return Xp * 1e6, Yp * 1e6, r"$x$ [$\mu$m]", r"$y$ [$\mu$m]"
+
     if kind == "ps":
         if direction not in {"x", "y"}:
             raise ValueError("direction must be 'x' or 'y' for phase space.")
-        c = direction.upper()
-        pos = df[c].to_numpy(dtype=float) * 1e6
-        ang = df[f"d{c}"].to_numpy(dtype=float) * 1e6
+        if direction == "x":
+            Xp, _ = _propagate_xy(X0, Y0, dX, dY, float(z_offset)) if z_offset != 0.0 else (X0, Y0)
+            pos = Xp * 1e6
+            ang = dX * 1e6
+        else:
+            _, Yp = _propagate_xy(X0, Y0, dX, dY, float(z_offset)) if z_offset != 0.0 else (X0, Y0)
+            pos = Yp * 1e6
+            ang = dY * 1e6
         return pos, ang, (rf"${direction}$ [$\mu$m]"), (rf"${direction}'$ [$\mu$rad]")
 
     raise ValueError("kind must be one of {'size','div','ps'}.")
@@ -813,13 +819,13 @@ def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
         return
 
     # moments
-    mu, sig, skew, kurt = stats.calc_moments_from_particle_distribution(d)  # (μ,σ,γ1,γ2_excess)
+    mu, sig, skew, kurt = stats.calc_moments_from_particle_distribution(d)  # (mu,sigma,gamma1,gamma2_excess)
     if not (np.isfinite(mu) and np.isfinite(sig) and sig > 0):
         return
 
     # axis to evaluate the envelope
     xmin, xmax = rng
-    # be generous: μ±6σ but clipped to plotting range, and dense for a smooth curve
+    # be generous: mu+-6sigma but clipped to plotting range, and dense for a smooth curve
     lo = max(xmin, mu - 6*sig)
     hi = min(xmax, mu + 6*sig)
     axis = np.linspace(lo, hi, 1024)
@@ -830,7 +836,7 @@ def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
         axis=axis, method=method, clip_negative=True
     )["envelope"]
 
-    # scale to histogram counts: counts ≈ N * PDF * bin_width
+    # scale to histogram counts: counts \approx N * PDF * bin_width
     N = d.size
     bin_width = (xmax - xmin) / max(2, int(nbins))
     counts_curve = N * env * bin_width

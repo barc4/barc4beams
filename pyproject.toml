@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "barc4beams"
-version = "2025.09.25"
+version = "2025.11.07"
 description = "A Python project for: standardization, statistics, and plotting ray-traced photon beams (PyOptiX, SHADOW3/4)."
 readme = "README.md"
-license = { text = "GPL-3.0-only" }
+license = { text = "CECILL-2.1" }
 authors = [{ name = "Rafael Celestre", email = "rafael.celestre@synchrotron-soleil.fr" }]
 keywords = ["ray-tracing", "beamline design", "x-ray optics", "optics"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "License :: OSI Approved",
   "Operating System :: OS Independent",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Physics"

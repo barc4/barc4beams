@@ -52,7 +52,6 @@ def to_standard_beam(beam, code: Optional[str] = None) -> pd.DataFrame:
     Returns
     -------
     pandas.DataFrame
-        pd.DataFrame
     """
 
     if code is None:
