@@ -184,7 +184,7 @@ class Beam:
         path: Optional[str] = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = True,
+        envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
@@ -233,7 +233,7 @@ class Beam:
         path: Optional[str] = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = True,
+        envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
@@ -283,7 +283,7 @@ class Beam:
         path: Optional[str] = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = True,
+        envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
@@ -353,8 +353,8 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = False,
         color: Optional[int] = 3,
-        x_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
-        y_range: Optional[Tuple[Optional(float), Optional(float)]] = None,
+        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
+        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
         bins: Optional[Union[int, Tuple[int, int]]] = None,
         bin_width: Optional[float] = None,
         bin_method: int = 0,
@@ -417,7 +417,7 @@ class Beam:
         """
         Plot the caustic map computed from `self.caustic()`.
         """
-        ca = self.compute_caustic(
+        ca = self.caustic(
             n_points=n_points,
             start=start,
             finish=finish,
