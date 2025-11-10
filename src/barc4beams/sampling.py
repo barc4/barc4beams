@@ -71,6 +71,12 @@ def beam_from_intensity(
     -------
     pandas.DataFrame
         Standard beam DataFrame ready for plotting/propagation/caustic.
+
+    Notes
+    -----
+    The sampling algorithm implemented here follows the strategy described in
+    Rebuffi *et al.*, *J. Synchrotron Rad.* **27**, 1108–1120 (2020).
+
     """
     if (energy is None) == (wavelength is None):
         raise ValueError("Provide exactly one of (energy, wavelength).")
