@@ -12,7 +12,7 @@ authors = [{ name = "Rafael Celestre", email = "rafael.celestre@synchrotron-sole
 keywords = ["ray-tracing", "beamline design", "x-ray optics", "optics"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved",
+  "License :: OSI Approved :: CEA CNRS Inria Logiciel Libre License, version 2.1 (CeCILL-2.1)",
   "Operating System :: OS Independent",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Physics"
