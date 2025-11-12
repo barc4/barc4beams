@@ -1,13 +1,12 @@
-# barc4beams — Example Notebooks
+# barc4beams - Example Notebooks
 
 v2025.11.10
 
-This folder contains a minimal set of Jupyter notebooks demonstrating the core functionalities of **barc4beams**,  
-from beam import and standardization to sampling, propagation, and statistical aggregation.
+This folder contains a minimal set of Jupyter notebooks demonstrating the core functionalities of **barc4beams**.
 
 ---
 
-## Example 1 — Beam from ray-tracing codes
+## Example 1:  Beam from ray-tracing codes
 **File:** `ex_01_beam_from_raytracing_codes.ipynb`
 
 Shows how to:
@@ -19,7 +18,7 @@ Shows how to:
 
 ---
 
-## Example 2 — Beam from wave-propagation codes
+## Example 2: Beam from wave-propagation codes
 **File:** `ex_02_beam_from_wave_propagation_codes.ipynb`
 
 Shows how to:
@@ -33,7 +32,7 @@ Shows how to:
 
 ---
 
-## Example 3 — Synthetic beam collection
+## Example 3: Synthetic beam collection
 **File:** `ex_03_beam_collection.ipynb`
 
 Shows how to:
