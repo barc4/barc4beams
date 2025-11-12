@@ -35,6 +35,7 @@ From PyPI:
 
 ```bash
 pip install barc4beams
+```
 
 ---
 
