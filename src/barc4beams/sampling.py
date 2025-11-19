@@ -85,7 +85,7 @@ def beam_from_intensity(
         wavelength = float(misc.energy_wavelength(energy, "eV"))   
     else:
         wavelength = float(wavelength)
-        energy = float(misc.energy_wavelength(wavelength, "m"))    # -> eV, per library conv. :contentReference[oaicite:1]{index=1}
+        energy = float(misc.energy_wavelength(wavelength, "m"))
 
     for k in ("intensity", "x_axis", "y_axis"):
         if k not in far_field:

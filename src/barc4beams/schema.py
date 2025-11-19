@@ -45,7 +45,6 @@ def validate_beam(df: pd.DataFrame) -> None:
         If required columns are missing, intensity columns are out of [0, 1],
         lost-ray flags are not {0, 1}, or a lost ray has nonzero intensity.
     """
-    # presence
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"Beam is missing required columns: {missing}")

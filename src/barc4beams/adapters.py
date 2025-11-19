@@ -101,7 +101,7 @@ def merge_standard_beams(beams: List[pd.DataFrame]) -> pd.DataFrame:
 _CANONICAL_ORDER = [
     "energy", "X", "Y", "Z", "dX", "dY", "dZ",
     "wavelength", "intensity", "intensity_s-pol",
-    "intensity_p-pol", "lost_ray_flag",
+    "intensity_p-pol", "lost_ray_flag", "id"
 ]
 
 def _enforce_beam_dtypes(df: pd.DataFrame) -> pd.DataFrame:
@@ -109,6 +109,7 @@ def _enforce_beam_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     Enforce the standard dtypes:
       - float64 for all physical quantities
       - uint8 for lost_ray_flag (0 alive, 1 lost)
+      - str for id
     """
     float_cols = [
         "energy", "X", "Y", "Z", "dX", "dY", "dZ",
@@ -121,6 +122,9 @@ def _enforce_beam_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     if "lost_ray_flag" in df.columns:
         s = pd.to_numeric(df["lost_ray_flag"], errors="coerce")
         df["lost_ray_flag"] = s.fillna(0).astype(np.uint8, copy=False)
+
+    if "id" in df.columns:
+        df["id"] = df["id"].astype(str)
 
     ordered = [c for c in _CANONICAL_ORDER if c in df.columns]
     extras = [c for c in df.columns if c not in ordered]
@@ -151,6 +155,9 @@ def _from_pyoptix(df: pd.DataFrame) -> pd.DataFrame:
         out["intensity_p-pol"] = out["intensity"]
 
     out["lost_ray_flag"] = (out["intensity"].to_numpy() == 0.0).astype(np.uint8)
+
+    if "id" not in out.columns:
+        out["id"] = ""
 
     return _enforce_beam_dtypes(out)
 
@@ -213,4 +220,6 @@ def _from_shadow(beam, cols, getter_name: str) -> pd.DataFrame:
         df.loc[lost, col] = 0.0
         df[col] = np.minimum(df[col].to_numpy(), 1.0)
 
+    df["id"] = ""
+    
     return _enforce_beam_dtypes(df)
