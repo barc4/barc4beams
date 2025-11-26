@@ -39,8 +39,7 @@ pip install barc4beams
 
 ---
 
+[![Documentation Status](https://readthedocs.org/projects/barc4beams/badge/?version=latest)](https://barc4beams.readthedocs.io/en/latest/?badge=latest)
 [![PyPI](https://img.shields.io/pypi/v/barc4beams.svg)](https://pypi.org/project/barc4beams/)
-
 [![License: CeCILL-2.1](https://img.shields.io/badge/license-CeCILL--2.1-blue.svg)](https://opensource.org/licenses/CECILL-2.1)
-
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17588927.svg)](https://doi.org/10.5281/zenodo.17588927)
