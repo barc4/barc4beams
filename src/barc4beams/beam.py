@@ -452,7 +452,7 @@ class Beam:
         io.save_beam(self._runs[0] if self.n_runs == 1 else self._runs, path)
         base = path.rsplit(".", 1)[0]
         json_path = f"{base}.json"
-        io.save_json_stats(self.stats, json_path, meta=meta)
+        io.save_json_stats(self.stats(), json_path, meta=meta)
 
     def save_beam(self, path: str) -> None:
         """Save the beam(s) only (HDF5)."""
@@ -460,4 +460,4 @@ class Beam:
 
     def save_stats(self, path: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
         """Save statistics only (JSON)."""
-        io.save_json_stats(self.stats, path, meta=meta)
+        io.save_json_stats(self.stats(), path, meta=meta)
