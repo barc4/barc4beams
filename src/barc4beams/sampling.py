@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: CECILL-2.1
-# Copyright (c) 2025 Synchrotron SOLEIL
+# Copyright (c) 2026 ESRF - the European Synchrotron
 
 """
 sampling.py — generate a standardized beam by sampling 2D intensity maps.
@@ -161,7 +161,6 @@ def beam_from_wavefront(
     ----------
     wavefront : dict
         Flat dict with keys:
-            REQUIRED
             - "intensity": 2D array I[y, x] (already per pixel)
             - "phase": 2D array of wavefront unwrapped phase in radians
             - "x_axis": 1D array of x in meters (strictly monotonic)
@@ -195,13 +194,9 @@ def beam_from_wavefront(
     Notes
     -----
     - This function samples ray positions from a spatial intensity map and
-      assigns local propagation angles from the phase gradient of the complex
-      wavefront.
-    - If the complex field is reconstructed from ("intensity", "phase"),
-      the phase may be wrapped; the complex representation remains valid.
-    - Low-intensity regions are masked when estimating phase gradients in
-      order to avoid unstable divisions by small |U| values.
-    - Rays landing in invalid slope regions are rejected and re-sampled.
+      assigns local propagation angles from the phase gradient - assumption from speckle 
+      tracking experiments as described in 
+      Celestre *et al.*, *J. Synchrotron Rad.* **32**, 180-199 (2025).
 
     """
     if (energy is None) == (wavelength is None):
@@ -237,12 +232,7 @@ def beam_from_wavefront(
     phase = np.asarray(wavefront["phase"], dtype=float)
     if phase.shape != intensity.shape:
         raise ValueError("'phase' must have the same shape as 'intensity'.")
-    # amp = np.sqrt(np.clip(intensity, 0.0, None))
-    # U = amp * np.exp(1j * phase)
 
-    # ------------------------------------------------------------------
-    # valid mask for stable gradient / slope estimation
-    # ------------------------------------------------------------------
     valid = np.isfinite(intensity) & (intensity > 0.0)
 
     if threshold is not None:
@@ -254,32 +244,11 @@ def beam_from_wavefront(
             raise ValueError("Intensity max is non-finite or non-positive; cannot apply threshold.")
         valid &= intensity >= thr * maxI
 
-    # absU2 = np.abs(U) ** 2
-    # eps = np.finfo(float).eps
-    # valid &= np.isfinite(absU2) & (absU2 > eps)
-
     if not np.any(valid):
         raise ValueError("No valid wavefront support remains after masking.")
 
     phase = np.asarray(wavefront["phase"], dtype=float)
-    # ------------------------------------------------------------------
-    # phase gradients from complex field
-    # dphi/dx = Im[(dU/dx) / U], dphi/dy = Im[(dU/dy) / U]
-    # ------------------------------------------------------------------
-    # dU_dy, dU_dx = np.gradient(U, y_axis, x_axis)
-
-    # grad_x = np.full(intensity.shape, np.nan, dtype=float)
-    # grad_y = np.full(intensity.shape, np.nan, dtype=float)
-
-    # ratio_x = np.full(intensity.shape, np.nan + 0j, dtype=complex)
-    # ratio_y = np.full(intensity.shape, np.nan + 0j, dtype=complex)
-
-    # ratio_x[valid] = dU_dx[valid] / U[valid]
-    # ratio_y[valid] = dU_dy[valid] / U[valid]
-
-    # grad_x[valid] = np.imag(ratio_x[valid])
-    # grad_y[valid] = np.imag(ratio_y[valid])
-
+    
     dU_dy, dU_dx = np.gradient(phase, y_axis, x_axis)
 
     grad_x = np.full(intensity.shape, np.nan, dtype=float)

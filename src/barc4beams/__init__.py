@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: CECILL-2.1
-# Copyright (c) 2025 Synchrotron SOLEIL
+# Copyright (c) 2026 ESRF - the European Synchrotron
 
 """
 barc4beams — analysis and plotting for ray-traced photon beams.
