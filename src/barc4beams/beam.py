@@ -5,7 +5,7 @@
 beam.py — unified interface class for stadandard beams.
 
 The Beam class is a high-level wrapper for methods for propagation,
-statistics, sampling from intensity maps, and plotting.
+statistics, sampling from intensity or wavefront maps, and plotting
 """
 
 from __future__ import annotations
@@ -79,6 +79,36 @@ class Beam:
         df = sampling.beam_from_intensity(
             far_field=far_field,
             near_field=near_field,
+            n_rays=n_rays,
+            energy=energy,
+            wavelength=wavelength,
+            jitter=jitter,
+            threshold=threshold,
+            seed=seed,
+            z0=z0,
+            polarization_degree=polarization_degree,
+        )
+        return cls.from_df(df)
+
+    @classmethod
+    def from_wavefront(
+        cls,
+        *,
+        wavefront: dict,
+        n_rays: int,
+        energy: float | None = None,
+        wavelength: float | None = None,
+        jitter: bool = True,
+        threshold: float | None = None,
+        seed: int | None = 42,
+        z0: float = 0.0,
+        polarization_degree: float = 1.0,
+    ) -> "Beam":
+        """
+        Build a Beam by sampling a spatial wavefront map (see sampling.beam_from_wavefront).
+        """
+        df = sampling.beam_from_wavefront(
+            wavefront=wavefront,
             n_rays=n_rays,
             energy=energy,
             wavelength=wavelength,
