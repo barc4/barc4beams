@@ -163,19 +163,9 @@ def beam_from_wavefront(
         Flat dict with keys:
             REQUIRED
             - "intensity": 2D array I[y, x] (already per pixel)
+            - "phase": 2D array of wavefront unwrapped phase in radians
             - "x_axis": 1D array of x in meters (strictly monotonic)
             - "y_axis": 1D array of y in meters (strictly monotonic)
-
-            OPTIONAL
-            - "Re": 2D array of real part of the complex field
-            - "Im": 2D array of imaginary part of the complex field
-            - "phase": 2D array of wavefront phase in radians
-
-        The complex field is built as follows:
-            - if both "Re" and "Im" are present, they are used directly
-            - otherwise, "phase" is required and the complex field is
-              reconstructed from:
-                  U = sqrt(intensity) * exp(1j * phase)
 
     n_rays : int
         Number of rays to sample.
@@ -244,21 +234,11 @@ def beam_from_wavefront(
     if not (np.all(np.diff(y_axis) > 0) or np.all(np.diff(y_axis) < 0)):
         raise ValueError("wavefront['y_axis'] must be strictly monotonic.")
 
-    has_reim = ("Re" in wavefront) and ("Im" in wavefront)
-    if has_reim:
-        re = np.asarray(wavefront["Re"], dtype=float)
-        im = np.asarray(wavefront["Im"], dtype=float)
-        if re.shape != intensity.shape or im.shape != intensity.shape:
-            raise ValueError("'Re' and 'Im' must have the same shape as 'intensity'.")
-        U = re + 1j * im
-    else:
-        if "phase" not in wavefront:
-            raise KeyError("wavefront must contain either ('Re', 'Im') or 'phase'.")
-        phase = np.asarray(wavefront["phase"], dtype=float)
-        if phase.shape != intensity.shape:
-            raise ValueError("'phase' must have the same shape as 'intensity'.")
-        amp = np.sqrt(np.clip(intensity, 0.0, None))
-        U = amp * np.exp(1j * phase)
+    phase = np.asarray(wavefront["phase"], dtype=float)
+    if phase.shape != intensity.shape:
+        raise ValueError("'phase' must have the same shape as 'intensity'.")
+    # amp = np.sqrt(np.clip(intensity, 0.0, None))
+    # U = amp * np.exp(1j * phase)
 
     # ------------------------------------------------------------------
     # valid mask for stable gradient / slope estimation
@@ -274,30 +254,39 @@ def beam_from_wavefront(
             raise ValueError("Intensity max is non-finite or non-positive; cannot apply threshold.")
         valid &= intensity >= thr * maxI
 
-    absU2 = np.abs(U) ** 2
-    eps = np.finfo(float).eps
-    valid &= np.isfinite(absU2) & (absU2 > eps)
+    # absU2 = np.abs(U) ** 2
+    # eps = np.finfo(float).eps
+    # valid &= np.isfinite(absU2) & (absU2 > eps)
 
     if not np.any(valid):
         raise ValueError("No valid wavefront support remains after masking.")
 
+    phase = np.asarray(wavefront["phase"], dtype=float)
     # ------------------------------------------------------------------
     # phase gradients from complex field
     # dphi/dx = Im[(dU/dx) / U], dphi/dy = Im[(dU/dy) / U]
     # ------------------------------------------------------------------
-    dU_dy, dU_dx = np.gradient(U, y_axis, x_axis)
+    # dU_dy, dU_dx = np.gradient(U, y_axis, x_axis)
+
+    # grad_x = np.full(intensity.shape, np.nan, dtype=float)
+    # grad_y = np.full(intensity.shape, np.nan, dtype=float)
+
+    # ratio_x = np.full(intensity.shape, np.nan + 0j, dtype=complex)
+    # ratio_y = np.full(intensity.shape, np.nan + 0j, dtype=complex)
+
+    # ratio_x[valid] = dU_dx[valid] / U[valid]
+    # ratio_y[valid] = dU_dy[valid] / U[valid]
+
+    # grad_x[valid] = np.imag(ratio_x[valid])
+    # grad_y[valid] = np.imag(ratio_y[valid])
+
+    dU_dy, dU_dx = np.gradient(phase, y_axis, x_axis)
 
     grad_x = np.full(intensity.shape, np.nan, dtype=float)
     grad_y = np.full(intensity.shape, np.nan, dtype=float)
 
-    ratio_x = np.full(intensity.shape, np.nan + 0j, dtype=complex)
-    ratio_y = np.full(intensity.shape, np.nan + 0j, dtype=complex)
-
-    ratio_x[valid] = dU_dx[valid] / U[valid]
-    ratio_y[valid] = dU_dy[valid] / U[valid]
-
-    grad_x[valid] = np.imag(ratio_x[valid])
-    grad_y[valid] = np.imag(ratio_y[valid])
+    grad_x[valid] = dU_dx[valid]
+    grad_y[valid] = dU_dy[valid]
 
     k = 2.0 * np.pi / wavelength
     slope_x = grad_x / k
@@ -484,6 +473,7 @@ def _sample_from_intensity(intensity, x_axis, y_axis, n, jitter=True, threshold=
         ys = rng.uniform(y_edges[iy], y_edges[iy + 1])
 
     return xs, ys
+
 
 def _interp2d_regular(
     x_axis: np.ndarray,
