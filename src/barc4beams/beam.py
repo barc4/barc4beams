@@ -561,14 +561,10 @@ class BeamEnsemble:
     @classmethod
     def from_h5(cls, path: str) -> "BeamEnsemble":
         """
-        Load a BeamEnsemble from an HDF5 file written by io.save_beam.
+        Load a BeamEnsemble from an HDF5 file written by io.save_beam_ensemble.
         """
-        obj = io.read_beam(path)
-
-        if isinstance(obj, pd.DataFrame):
-            return cls([obj])
-
-        return cls(obj)
+        beams = io.read_beam_ensemble(path)
+        return cls.from_dfs(beams)
 
     def _standardize(self, obj: Beam | pd.DataFrame | Any, code: str | None) -> pd.DataFrame:
         if isinstance(obj, Beam):
@@ -629,7 +625,7 @@ class BeamEnsemble:
         The HDF5 file contains all runs.
         A sibling JSON file with the same base name contains ensemble statistics.
         """
-        io.save_beam(list(self._runs), path)
+        io.save_beam_ensemble(list(self._runs), path)
 
         base = path.rsplit(".", 1)[0]
         json_path = f"{base}.json"
@@ -639,7 +635,7 @@ class BeamEnsemble:
         """
         Save ensemble beams only to HDF5.
         """
-        io.save_beam(list(self._runs), path)
+        io.save_beam_ensemble(list(self._runs), path)
 
     def save_stats(self, path: str, *, meta: dict[str, Any] | None = None) -> None:
         """
