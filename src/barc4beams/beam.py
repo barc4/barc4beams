@@ -432,6 +432,34 @@ class Beam:
             plot=plot,
         )
 
+    def plot_intensity(
+        self,
+        *,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: str | None = None,
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
+        """
+        Plot the intensity distribution of the beam.
+        """
+        return viz.plot_intensity(
+            df=self.df,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
+
+
     def plot_caustic(
         self,
         *,

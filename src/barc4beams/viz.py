@@ -112,6 +112,10 @@ def plot_beam(
         z_offset=z_offset,
         weight_by_intensity=weight_by_intensity,
     )
+
+    if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     fig, axes = _common_xy_plot(
         x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
@@ -162,6 +166,10 @@ def plot_divergence(
         z_offset=0,
         weight_by_intensity=weight_by_intensity,
     )
+
+    if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     fig, axes = _common_xy_plot(
         x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
@@ -227,9 +235,14 @@ def plot_phase_space(
             z_offset=z_offset,
             weight_by_intensity=weight_by_intensity,
         )
+
+        bins_local = bins
+        if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins_local is None:
+            bins_local = _auto_bins_from_trimmed_weights(weights)
+
         return _common_xy_plot(
             x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
-            x_range, y_range, bins, bin_width, bin_method, dpi, save_path,
+            x_range, y_range, bins_local, bin_width, bin_method, dpi, save_path,
             showXhist, showYhist, envelope, envelope_method
         )
 
@@ -327,6 +340,15 @@ def plot_caustic(
             w = np.asarray(Wmat, dtype=float)
             if w.shape == mat.shape:
                 weights = w.reshape(P * N)
+                std_weight = np.nanstd(weights)
+                mean_weight = np.nanmean(weights)
+                if np.abs(std_weight/mean_weight) >= 1e-6:
+                    max_weight = np.percentile(weights, 99.99)
+                    min_weight = np.percentile(weights, 00.01)
+                    weights = (weights-min_weight)/(max_weight-min_weight)
+                    weights = np.clip(weights, 0, 1)
+                else:
+                    weights = np.ones(len(weights), dtype=float)
                 using_weights = True
 
         H, ze, xe = np.histogram2d(z_rep, pos_um, bins=[z_edges, pos_edges], weights=weights)
@@ -442,6 +464,9 @@ def plot_energy(
             plt.show()
         return fig, ax
 
+    if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     nbx, _ = _auto_bins(e, e, bins, bin_width, bin_method)
     xr = _resolve_range(e, None)
 
@@ -500,7 +525,10 @@ def plot_energy_vs_intensity(
 
     xl = r"energy [eV]"
     yl = r"$I$ [arb]"
+
     weights = _beam_weights(df2, weight_by_intensity=weight_by_intensity)
+    if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
 
     fig, axes = _common_xy_plot(
         x, y, weights, xl, yl,
@@ -523,6 +551,72 @@ def plot_energy_vs_intensity(
         plt.show()
     return fig, axes
 
+def plot_intensity(
+    df: pd.DataFrame,
+    *,
+    bins: Optional[Union[int, Tuple[int, int]]] = None,
+    bin_width: Optional[Number] = None,
+    bin_method: int = 0,
+    dpi: int = 100,
+    path: Optional[str] = None,
+    weight_by_intensity: bool = False,
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True,
+) -> Tuple[plt.Figure, plt.Axes]:
+    """Intensity distribution vs I, optionally intensity-weighted."""
+    fig_siz = 4.8
+
+    if apply_style:
+        start_plotting(k)
+
+    df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
+    intensity = pd.to_numeric(df2["intensity"], errors="coerce").to_numpy(dtype=float)
+    weights = _beam_weights(df2, weight_by_intensity=weight_by_intensity)
+
+    valid = np.isfinite(intensity) & np.isfinite(weights) & (weights > 0.0)
+    intensity = intensity[valid]
+    weights = weights[valid]
+
+    if intensity.size == 0:
+        fig, ax = plt.subplots(figsize=(fig_siz * 6.4 / 4.8, fig_siz), dpi=dpi)
+        ax.set_xlabel("intensity [arb]")
+        ax.set_ylabel("[weighted rays]" if weight_by_intensity else "[rays]")
+        ax.text(0.5, 0.5, "no finite intensities", ha="center", va="center", transform=ax.transAxes)
+        if path:
+            fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        if plot:
+            plt.show()
+        return fig, ax
+
+    if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
+    nbx, _ = _auto_bins(intensity, intensity, bins, bin_width, bin_method)
+    xr = _resolve_range(intensity, None)
+
+    counts, edges = np.histogram(intensity, bins=nbx, range=xr, weights=weights)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, ax = plt.subplots(figsize=(fig_siz * 6.4 / 4.8, fig_siz), dpi=dpi)
+
+    ax.fill_between(centers, 0, counts, step="mid", color="steelblue", alpha=0.5)
+    ax.step(edges[:-1], counts, where="post", color="steelblue", linewidth=1.0)
+
+    ax.set_xlim(xr)
+    ax.set_ylim(0, 1.05 * max(1, counts.max()))
+    ax.grid(which="major", linestyle="--", linewidth=0.3, color="dimgrey")
+    ax.grid(which="minor", linestyle="--", linewidth=0.3, color="lightgrey")
+    ax.set_xlabel("intensity [arb]")
+    ax.set_ylabel("[weighted rays]" if weight_by_intensity else "[rays]")
+    ax.locator_params(nbins=5)
+
+    if path:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    if plot:
+        plt.show()
+
+    return fig, ax
 
 # ---------------------------------------------------------------------------
 # style settings
@@ -615,15 +709,6 @@ def _common_xy_plot(
 
     x_range = _resolve_range(x, x_range)
     y_range = _resolve_range(y, y_range)
-
-    # if aspect_ratio is True:
-    #     x_range = (np.min([x_range[0], y_range[0]]), np.max([x_range[1], y_range[1]]))
-    #     y_range = x_range
-
-    if bin_method == 0 and bin_width is None and bins is None:
-        weight = weights[(weights >= np.percentile(weights,5)) &
-                         (weights <= np.percentile(weights,95))]
-        bins = int(np.sqrt(len(weight)))
 
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
@@ -873,6 +958,37 @@ def _resolve_range(arr: np.ndarray, xr: RangeT) -> Tuple[float, float]:
     span = hi - lo
     pad = 0.02 * span
     return (lo - pad, hi + pad)
+
+def _is_polychromatic(df: pd.DataFrame, *, rtol: float = 1e-12) -> bool:
+    """Return True when finite alive-ray energies are not effectively constant."""
+    if "energy" not in df.columns:
+        return False
+
+    if "lost_ray_flag" in df.columns:
+        df = df.loc[df["lost_ray_flag"] == 0]
+
+    e = pd.to_numeric(df["energy"], errors="coerce").to_numpy(dtype=float)
+    e = e[np.isfinite(e)]
+
+    if e.size < 2:
+        return False
+
+    return not np.allclose(e, e[0], rtol=rtol, atol=0.0)
+
+def _auto_bins_from_trimmed_weights(weights: np.ndarray) -> int:
+    """Return sqrt(N) bins after trimming weights to the 5–95 percentile interval."""
+    w = np.asarray(weights, dtype=float)
+    w = w[np.isfinite(w)]
+
+    if w.size == 0:
+        return 1
+
+    lo = np.percentile(w, 5)
+    hi = np.percentile(w, 95)
+
+    w = w[(w >= lo) & (w <= hi)]
+
+    return max(1, int(np.sqrt(w.size)))
 
 def _auto_bins(
     arrx: np.ndarray,

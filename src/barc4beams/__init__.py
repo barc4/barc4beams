@@ -19,6 +19,7 @@ from .viz import (
     plot_divergence,
     plot_energy,
     plot_energy_vs_intensity,
+    plot_intensity,
     plot_phase_space,
 )
 
@@ -52,5 +53,6 @@ __all__ = [
     "plot_divergence",
     "plot_energy",
     "plot_energy_vs_intensity",
+    "plot_intensity",
     "plot_phase_space",
 ]
