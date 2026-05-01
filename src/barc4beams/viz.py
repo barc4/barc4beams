@@ -620,6 +620,11 @@ def _common_xy_plot(
     #     x_range = (np.min([x_range[0], y_range[0]]), np.max([x_range[1], y_range[1]]))
     #     y_range = x_range
 
+    if bin_method == 0 and bin_width is None and bins is None:
+        weight = weights[(weights >= np.percentile(weights,5)) &
+                         (weights <= np.percentile(weights,95))]
+        bins = int(np.sqrt(len(weight)))
+
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
     fig_siz = 6.4
@@ -797,7 +802,17 @@ def _beam_weights(df: pd.DataFrame, *, weight_by_intensity: bool = True) -> np.n
     Otherwise, unit weights are returned, preserving the old ray-count behavior.
     """
     if weight_by_intensity and "intensity" in df.columns:
-        return pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
+        weight = pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
+        std_weight = np.nanstd(weight)
+        mean_weight = np.nanmean(weight)
+        if np.abs(std_weight/mean_weight) >= 1e-6:
+            max_weight = np.percentile(weight, 99.99)
+            min_weight = np.percentile(weight, 00.01)
+            weight = (weight-min_weight)/(max_weight-min_weight)
+            weight = np.clip(weight, 0, 1)
+        else:
+            weight = np.ones(len(df), dtype=float)
+        return weight
 
     return np.ones(len(df), dtype=float)
 
