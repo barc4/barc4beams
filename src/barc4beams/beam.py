@@ -238,8 +238,9 @@ class Beam:
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
-        plot: bool = True,
         z_offset: float = 0.0,
+        scatter_weight_mode: str = "auto",
+        plot: bool = True,
     ):
         """
         Plot the spatial footprint X vs Y with optional propagation offset.
@@ -264,6 +265,7 @@ class Beam:
             k=k,
             plot=plot,
             z_offset=z_offset,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_divergence(
@@ -285,6 +287,7 @@ class Beam:
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
+        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -309,6 +312,7 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_phase_space(
@@ -331,8 +335,9 @@ class Beam:
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
-        plot: bool = True,
         z_offset: float = 0.0,
+        scatter_weight_mode: str = "auto",
+        plot: bool = True,
     ):
         """
         Plot phase-space diagrams X vs dX and/or Y vs dY.
@@ -358,6 +363,7 @@ class Beam:
             k=k,
             plot=plot,
             z_offset=z_offset,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_energy(
@@ -382,51 +388,6 @@ class Beam:
             bin_method=bin_method,
             dpi=dpi,
             path=path,
-            apply_style=apply_style,
-            k=k,
-            plot=plot,
-        )
-
-    def plot_energy_vs_intensity(
-        self,
-        *,
-        mode: str = "scatter",
-        aspect_ratio: bool = False,
-        color: int | None = 3,
-        x_range: tuple[float | None, float | None] | None = None,
-        y_range: tuple[float | None, float | None] | None = None,
-        bins: int | tuple[int, int] | None = None,
-        bin_width: float | None = None,
-        bin_method: int = 0,
-        dpi: int = 100,
-        path: str | None = None,
-        showXhist: bool = True,
-        showYhist: bool = True,
-        envelope: bool = False,
-        envelope_method: str = "edgeworth",
-        apply_style: bool = True,
-        k: float = 1.0,
-        plot: bool = True,
-    ):
-        """
-        Plot beam intensity as a function of photon energy.
-        """
-        return viz.plot_energy_vs_intensity(
-            df=self.df,
-            mode=mode,
-            aspect_ratio=aspect_ratio,
-            color=color,
-            x_range=x_range,
-            y_range=y_range,
-            bins=bins,
-            bin_width=bin_width,
-            bin_method=bin_method,
-            dpi=dpi,
-            path=path,
-            showXhist=showXhist,
-            showYhist=showYhist,
-            envelope=envelope,
-            envelope_method=envelope_method,
             apply_style=apply_style,
             k=k,
             plot=plot,
@@ -459,6 +420,50 @@ class Beam:
             plot=plot,
         )
 
+    def plot_energy_vs_intensity(
+        self,
+        *,
+        mode: str = "scatter",
+        aspect_ratio: bool = False,
+        color: int | None = 3,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: str | None = None,
+        showXhist: bool = True,
+        showYhist: bool = True,
+        envelope_method: str = "edgeworth",
+        apply_style: bool = True,
+        k: float = 1.0,
+        scatter_weight_mode: str = "auto",
+        plot: bool = True,
+    ):
+        """
+        Plot beam intensity as a function of photon energy.
+        """
+        return viz.plot_energy_vs_intensity(
+            df=self.df,
+            mode=mode,
+            aspect_ratio=aspect_ratio,
+            color=color,
+            x_range=x_range,
+            y_range=y_range,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            showXhist=showXhist,
+            showYhist=showYhist,
+            envelope_method=envelope_method,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+            scatter_weight_mode=scatter_weight_mode,
+        )
 
     def plot_caustic(
         self,
@@ -474,11 +479,11 @@ class Beam:
         path: str | None = None,
         apply_style: bool = True,
         k: float = 1.0,
-        plot: bool = True,
         top_stat: str | None = None,
         n_points: int = 501,
         start: float = -0.5,
         finish: float = 0.5,
+        plot: bool = True,
     ):
         """
         Plot the caustic map computed from `self.caustic()`.
