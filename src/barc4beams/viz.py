@@ -843,7 +843,13 @@ def _common_xy_plot(
 
         if xs.size == 0:
             im = ax_image.scatter([], [])
+            
         elif scatter_mode == "color":
+            idx = np.argsort(ws)
+            xs = xs[idx]
+            ys = ys[idx]
+            ws = ws[idx]
+
             cmap = _color_palette(color or 1)
             im = ax_image.scatter(
                 xs, ys,
@@ -856,8 +862,6 @@ def _common_xy_plot(
                 marker=marker,
                 linewidths=linewidths,
             )
-            cb = fig.colorbar(im, ax=ax_image)
-            cb.set_label("ray weight")
 
         elif scatter_mode == "alpha":
             if color is None or color == 0:
