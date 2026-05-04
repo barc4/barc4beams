@@ -2,10 +2,14 @@
 # Copyright (c) 2026 ESRF - the European Synchrotron
 
 """
-beam.py — unified interface class for stadandard beams.
+beam.py — unified interface classes for standardized beams.
 
-The Beam class is a high-level wrapper for methods for propagation,
-statistics, sampling from intensity or wavefront maps, and plotting
+Beam
+    Single standardized photon beam.
+
+BeamEnsemble
+    Collection of comparable beam realizations, typically repeated seeds/runs
+    of the same simulation setup, used for ensemble statistics.
 """
 
 from __future__ import annotations
@@ -19,24 +23,36 @@ from . import adapters, io, propagation, sampling, schema, stats, viz
 
 class Beam:
     """
-    High-level container for standardized photon beams.
+    High-level container for one standardized photon beam.
 
     Wraps a validated beam DataFrame and exposes core analysis, propagation,
-    and visualization methods consistent with barc4beams modules.
+    sampling, saving, and visualization methods.
     """
-    def __init__(self, obj: Any, code: Optional[str] = None) -> None:
+
+    def __init__(self, obj: Any, code: str | None = None) -> None:
         """
-        Initialize a Beam instance from a validated DataFrame.
+        Initialize a Beam instance from one beam-like object.
+
+        Parameters
+        ----------
+        obj : Any
+            Beam-like object accepted by `adapters.to_standard_beam`, or an
+            already standardized pandas DataFrame.
+        code : str, optional
+            Source-code identifier passed to `adapters.to_standard_beam`.
+
+        Raises
+        ------
+        TypeError
+            If a list or tuple is passed. Use BeamEnsemble for multiple beams.
+        ValueError
+            If the standardized beam does not satisfy the schema.
         """
         if isinstance(obj, (list, tuple)):
-            self._runs = [self._standardize(o, code) for o in obj]
-        else:
-            self._runs = [self._standardize(obj, code)]
+            raise TypeError("Beam accepts a single beam only. Use BeamEnsemble for multiple runs.")
 
-        for df in self._runs:
-            schema.validate_beam(df)
-
-        self._stats_cache: Optional[Dict] = None
+        self._df = self._standardize(obj, code)
+        schema.validate_beam(self._df)
 
     # ------------------------------------------------------------------
     # construction helpers
@@ -49,15 +65,21 @@ class Beam:
         """
         schema.validate_beam(df)
         return cls(df)
-    
+
     @classmethod
     def from_h5(cls, path: str) -> "Beam":
         """
         Load a Beam from an HDF5 file written by io.save_beam.
         """
-        df = io.read_beam(path)
-        return cls(df)
-    
+        obj = io.read_beam(path)
+
+        if isinstance(obj, (list, tuple)):
+            raise ValueError(
+                "HDF5 file contains multiple beams. Use BeamEnsemble.from_h5 instead."
+            )
+
+        return cls(obj)
+
     @classmethod
     def from_intensity(
         cls,
@@ -74,7 +96,9 @@ class Beam:
         polarization_degree: float = 1.0,
     ) -> "Beam":
         """
-        Build a Beam by sampling 2D intensity maps (see sampling.beam_from_intensity).
+        Build a Beam by sampling 2D intensity maps.
+
+        See `sampling.beam_from_intensity`.
         """
         df = sampling.beam_from_intensity(
             far_field=far_field,
@@ -105,7 +129,9 @@ class Beam:
         polarization_degree: float = 1.0,
     ) -> "Beam":
         """
-        Build a Beam by sampling a spatial wavefront map (see sampling.beam_from_wavefront).
+        Build a Beam by sampling a spatial wavefront map.
+
+        See `sampling.beam_from_wavefront`.
         """
         df = sampling.beam_from_wavefront(
             wavefront=wavefront,
@@ -120,27 +146,22 @@ class Beam:
         )
         return cls.from_df(df)
 
-    def _standardize(self, obj: Any, code: Optional[str]) -> pd.DataFrame:
+    def _standardize(self, obj: Any, code: str | None) -> pd.DataFrame:
         if isinstance(obj, pd.DataFrame):
             return obj.copy()
+
         return adapters.to_standard_beam(obj, code=code)
 
     # ------------------------------------------------------------------
     # properties
     # ------------------------------------------------------------------
-    @property
-    def n_runs(self) -> int:
-        return len(self._runs)
 
     @property
     def df(self) -> pd.DataFrame:
-        if self.n_runs != 1:
-            raise ValueError("Beam contains multiple runs; access .runs instead.")
-        return self._runs[0]
-
-    @property
-    def runs(self) -> Sequence[pd.DataFrame]:
-        return self._runs
+        """
+        Standardized beam DataFrame.
+        """
+        return self._df
 
     # ------------------------------------------------------------------
     # stats
@@ -148,7 +169,9 @@ class Beam:
 
     def stats(self, *, verbose: bool = False) -> dict:
         """
-        Compute descriptive beam statistics (see stats.get_statistics).
+        Compute descriptive beam statistics.
+
+        See `stats.get_statistics`.
         """
         return stats.get_statistics(self.df, verbose=verbose)
 
@@ -165,38 +188,62 @@ class Beam:
         """
         Return a new Beam propagated through free space by `z_offset` [m].
         """
-        if self.n_runs != 1:
-            raise ValueError("Free-space propagation requires a single run (got multiple).")
-
         df2 = propagation.propagate(self.df, z_offset)
         out = Beam.from_df(df2)
+
         if verbose:
             stats.get_statistics(df2, verbose=True)
+
         return out
-    
+
     def caustic(
         self,
         *,
         n_points: int = 501,
         start: float = -0.5,
         finish: float = 0.5,
-    ) -> Dict:
+    ) -> dict:
         """
-        Compute the free-space caustic of this Beam (see propagation.caustic).
-        """
-        if self.n_runs != 1:
-            raise ValueError("Caustic computation requires a single run (got multiple).")
+        Compute the free-space caustic of this Beam.
 
-        res = propagation.caustic(
+        See `propagation.caustic`.
+        """
+        return propagation.caustic(
             beam=self.df,
             n_points=n_points,
             start=start,
             finish=finish,
         )
-        return res
+
+    def apply_wavefront(
+        self,
+        *,
+        wavefront: dict,
+        energy: float | None = None,
+        wavelength: float | None = None,
+        threshold: float | None = None,
+        verbose: bool = False,
+    ) -> "Beam":
+        """
+        Returns a new Beam instance with updated intensity, slopes, and lost-ray
+        flags.
+        """
+        df2 = sampling.apply_wavefront(
+            standard_beam=self.df,
+            wavefront=wavefront,
+            energy=energy,
+            wavelength=wavelength,
+            threshold=threshold,
+        )
+        out = Beam.from_df(df2)
+
+        if verbose:
+            stats.get_statistics(df2, verbose=True)
+
+        return out
 
     # ------------------------------------------------------------------
-    # plotting (only allowed for single run)
+    # plotting
     # ------------------------------------------------------------------
 
     def plot_beam(
@@ -205,27 +252,26 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = True,
         color: int = 1,
-        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
-        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
         bins: Optional[Union[int, Tuple[int, int]]] = None,
         bin_width: Optional[float] = None,
         bin_method: int = 0,
         dpi: int = 100,
-        path: Optional[str] = None,
+        path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
         envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
-        plot: bool = True,
         z_offset: float = 0.0,
+        scatter_weight_mode: str = "auto",
+        plot: bool = True,
     ):
         """
-        Plot the spatial footprint (X vs Y) with optional propagation offset.
+        Plot the spatial footprint X vs Y with optional propagation offset.
         """
-        if self.n_runs != 1:
-            raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_beam(
             df=self.df,
             mode=mode,
@@ -246,6 +292,7 @@ class Beam:
             k=k,
             plot=plot,
             z_offset=z_offset,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_divergence(
@@ -254,27 +301,25 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = False,
         color: int = 2,
-        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None,  
-        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None,  
-        bins: Optional[Union[int, Tuple[int, int]]] = None,
-        bin_width: Optional[float] = None,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
         bin_method: int = 0,
         dpi: int = 100,
-        path: Optional[str] = None,
+        path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
         envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
+        scatter_weight_mode: str = "auto",
         plot: bool = True,
-        z_offset: float = 0.0,
     ):
         """
-        Plot the angular distribution (dX vs dY).
+        Plot the angular distribution dX vs dY.
         """
-        if self.n_runs != 1:
-            raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_divergence(
             df=self.df,
             mode=mode,
@@ -294,7 +339,7 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
-            z_offset=z_offset,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_phase_space(
@@ -304,27 +349,26 @@ class Beam:
         mode: str = "scatter",
         aspect_ratio: bool = False,
         color: int = 3,
-        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None, 
-        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None, 
-        bins: Optional[Union[int, Tuple[int, int]]] = None,
-        bin_width: Optional[float] = None,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
         bin_method: int = 0,
         dpi: int = 100,
-        path: Optional[str] = None,
+        path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
         envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
+        z_offset: float = 0.0,
+        scatter_weight_mode: str = "auto",
         plot: bool = True,
-        z_offset: float = 0.0, 
     ):
         """
-        Plot the phase-space diagram (X vs dX or Y vs dY).
+        Plot phase-space diagrams X vs dX and/or Y vs dY.
         """
-        if self.n_runs != 1:
-            raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_phase_space(
             df=self.df,
             direction=direction,
@@ -346,16 +390,17 @@ class Beam:
             k=k,
             plot=plot,
             z_offset=z_offset,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_energy(
         self,
         *,
-        bins: Optional[Union[int, Tuple[int, int]]] = None,
-        bin_width: Optional[float] = None,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
         bin_method: int = 0,
         dpi: int = 100,
-        path: Optional[str] = None,
+        path: str | None = None,
         apply_style: bool = True,
         k: float = 1.0,
         plot: bool = True,
@@ -363,9 +408,34 @@ class Beam:
         """
         Plot the energy distribution of the beam.
         """
-        if self.n_runs != 1:
-            raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_energy(
+            df=self.df,
+            bins=bins,
+            bin_width=bin_width,
+            bin_method=bin_method,
+            dpi=dpi,
+            path=path,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
+
+    def plot_intensity(
+        self,
+        *,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
+        bin_method: int = 0,
+        dpi: int = 100,
+        path: str | None = None,
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
+        """
+        Plot the intensity distribution of the beam.
+        """
+        return viz.plot_intensity(
             df=self.df,
             bins=bins,
             bin_width=bin_width,
@@ -382,27 +452,25 @@ class Beam:
         *,
         mode: str = "scatter",
         aspect_ratio: bool = False,
-        color: Optional[int] = 3,
-        x_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
-        y_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
-        bins: Optional[Union[int, Tuple[int, int]]] = None,
-        bin_width: Optional[float] = None,
+        color: int | None = 3,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
+        bins: int | tuple[int, int] | None = None,
+        bin_width: float | None = None,
         bin_method: int = 0,
         dpi: int = 100,
-        path: Optional[str] = None,
+        path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = False,
         envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
+        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
         Plot beam intensity as a function of photon energy.
         """
-        if self.n_runs != 1:
-            raise ValueError("Plotting not supported for multiple runs.")
         return viz.plot_energy_vs_intensity(
             df=self.df,
             mode=mode,
@@ -417,11 +485,11 @@ class Beam:
             path=path,
             showXhist=showXhist,
             showYhist=showYhist,
-            envelope=envelope,
             envelope_method=envelope_method,
             apply_style=apply_style,
             k=k,
             plot=plot,
+            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_caustic(
@@ -429,20 +497,20 @@ class Beam:
         *,
         which: Literal["x", "y", "both"] = "both",
         aspect_ratio: bool = False,
-        color: Optional[int] = 5,
-        z_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
-        xy_range: Optional[Tuple[Optional[float], Optional[float]]] = None,
-        bins: Optional[int | Tuple[Optional[int], int]] = None,
-        bin_width: Optional[float] = None,
+        color: int | None = 5,
+        z_range: tuple[float | None, float | None] | None = None,
+        xy_range: tuple[float | None, float | None] | None = None,
+        bins: int | tuple[int | None, int] | None = None,
+        bin_width: float | None = None,
         dpi: int = 100,
-        path: Optional[str] = None,
+        path: str | None = None,
         apply_style: bool = True,
         k: float = 1.0,
-        plot: bool = True,
-        top_stat: Optional[str] = None,
+        top_stat: str | None = None,
         n_points: int = 501,
         start: float = -0.5,
         finish: float = 0.5,
+        plot: bool = True,
     ):
         """
         Plot the caustic map computed from `self.caustic()`.
@@ -452,6 +520,7 @@ class Beam:
             start=start,
             finish=finish,
         )
+
         return viz.plot_caustic(
             caustic=ca,
             which=which,
@@ -472,22 +541,164 @@ class Beam:
     # ------------------------------------------------------------------
     # saving
     # ------------------------------------------------------------------
-    def save(self, path: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
+
+    def save(self, path: str, *, meta: dict[str, Any] | None = None) -> None:
         """
         Save beam to HDF5 and stats to JSON.
 
-        The HDF5 file will contain the beam(s).
-        A sibling JSON file (same base name) will contain the statistics.
+        The HDF5 file contains the beam.
+        A sibling JSON file with the same base name contains the statistics.
         """
-        io.save_beam(self._runs[0] if self.n_runs == 1 else self._runs, path)
+        io.save_beam(self.df, path)
+
         base = path.rsplit(".", 1)[0]
         json_path = f"{base}.json"
         io.save_json_stats(self.stats(), json_path, meta=meta)
 
     def save_beam(self, path: str) -> None:
-        """Save the beam(s) only (HDF5)."""
-        io.save_beam(self._runs[0] if self.n_runs == 1 else self._runs, path)
+        """
+        Save the beam only to HDF5.
+        """
+        io.save_beam(self.df, path)
 
-    def save_stats(self, path: str, *, meta: Optional[Dict[str, Any]] = None) -> None:
-        """Save statistics only (JSON)."""
+    def save_stats(self, path: str, *, meta: dict[str, Any] | None = None) -> None:
+        """
+        Save statistics only to JSON.
+        """
+        io.save_json_stats(self.stats(), path, meta=meta)
+
+
+class BeamEnsemble:
+    """
+    Container for comparable standardized beam realizations.
+
+    This is intended for repeated runs/seeds of the same beamline setup. It owns
+    ensemble-level statistics, saving, and merging. Single-beam operations such
+    as plotting, propagation, and caustic calculation remain on Beam.
+    """
+
+    def __init__(self, beams: Sequence[Beam | pd.DataFrame | Any], code: str | None = None) -> None:
+        """
+        Initialize a BeamEnsemble from multiple beams.
+
+        Parameters
+        ----------
+        beams : sequence of Beam, pandas.DataFrame, or beam-like objects
+            Beam realizations to include in the ensemble.
+        code : str, optional
+            Source-code identifier passed to `adapters.to_standard_beam` for
+            non-DataFrame, non-Beam inputs.
+
+        Raises
+        ------
+        ValueError
+            If no beams are provided or one beam fails schema validation.
+        TypeError
+            If `beams` is not a sequence of beam-like objects.
+        """
+        if isinstance(beams, (pd.DataFrame, Beam)):
+            raise TypeError("BeamEnsemble expects a sequence of beams, not a single beam.")
+
+        if not beams:
+            raise ValueError("BeamEnsemble: no beams provided.")
+
+        self._runs = [self._standardize(b, code) for b in beams]
+
+        for df in self._runs:
+            schema.validate_beam(df)
+
+    # ------------------------------------------------------------------
+    # construction helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_dfs(cls, beams: Sequence[pd.DataFrame]) -> "BeamEnsemble":
+        """
+        Create a BeamEnsemble directly from standard DataFrames.
+        """
+        return cls(beams)
+
+    @classmethod
+    def from_h5(cls, path: str) -> "BeamEnsemble":
+        """
+        Load a BeamEnsemble from an HDF5 file written by io.save_beam_ensemble.
+        """
+        beams = io.read_beam_ensemble(path)
+        return cls.from_dfs(beams)
+
+    def _standardize(self, obj: Beam | pd.DataFrame | Any, code: str | None) -> pd.DataFrame:
+        if isinstance(obj, Beam):
+            return obj.df.copy()
+
+        if isinstance(obj, pd.DataFrame):
+            return obj.copy()
+
+        return adapters.to_standard_beam(obj, code=code)
+
+    # ------------------------------------------------------------------
+    # properties
+    # ------------------------------------------------------------------
+
+    @property
+    def n_runs(self) -> int:
+        """
+        Number of beam realizations in the ensemble.
+        """
+        return len(self._runs)
+
+    @property
+    def runs(self) -> Sequence[pd.DataFrame]:
+        """
+        Standardized beam DataFrames.
+        """
+        return self._runs
+
+    # ------------------------------------------------------------------
+    # ensemble operations
+    # ------------------------------------------------------------------
+
+    def stats(self, *, verbose: bool = False) -> dict:
+        """
+        Compute ensemble statistics over all runs.
+
+        See `stats.get_statistics`.
+        """
+        return stats.get_statistics(list(self._runs), verbose=verbose)
+
+    def merge(self) -> Beam:
+        """
+        Merge all ensemble runs into a single Beam.
+
+        The returned object is a Beam instance.
+        """
+        merged = adapters.merge_standard_beams(list(self._runs))
+        return Beam.from_df(merged)
+
+    # ------------------------------------------------------------------
+    # saving
+    # ------------------------------------------------------------------
+
+    def save(self, path: str, *, meta: dict[str, Any] | None = None) -> None:
+        """
+        Save ensemble beams to HDF5 and ensemble stats to JSON.
+
+        The HDF5 file contains all runs.
+        A sibling JSON file with the same base name contains ensemble statistics.
+        """
+        io.save_beam_ensemble(list(self._runs), path)
+
+        base = path.rsplit(".", 1)[0]
+        json_path = f"{base}.json"
+        io.save_json_stats(self.stats(), json_path, meta=meta)
+
+    def save_beams(self, path: str) -> None:
+        """
+        Save ensemble beams only to HDF5.
+        """
+        io.save_beam_ensemble(list(self._runs), path)
+
+    def save_stats(self, path: str, *, meta: dict[str, Any] | None = None) -> None:
+        """
+        Save ensemble statistics only to JSON.
+        """
         io.save_json_stats(self.stats(), path, meta=meta)

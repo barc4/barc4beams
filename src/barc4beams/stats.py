@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: CECILL-2.1
-# Copyright (c) 2025 Synchrotron SOLEIL
+# Copyright (c) 2026 ESRF - the European Synchrotron
 
 """
 stats.py - beam statistics and 1D profile metrics.
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 import warnings
 
 # ---------------------------------------------------------------------------
@@ -23,18 +23,20 @@ def get_statistics(
     verbose: bool = False,
 ) -> dict:
     """
-    Compute beam statistics for X/Y and their divergences dX/dY, plus energy.
+    Compute intensity-weighted beam statistics for X/Y, dX/dY, and energy.
 
-    - Lost rays are removed via (intensity != 0) before computing stats.
+    Lost rays are removed via ``lost_ray_flag == 0`` before computing stats.
+    All statistical observables are weighted by the ``intensity`` column.
+
+    With unit intensities, the weighted formulas reduce to the unweighted case.
 
     Inputs
     ------
     beams : pd.DataFrame or list[pd.DataFrame]
-        One or multiple PyOptiX beam DataFrames (e.g., from get_diagram/get_impacts).
+        One or multiple barc4beams beam DataFrames.
 
     Keyword Args
     ------------
-
     verbose : bool, optional
         If True, print a human-readable summary.
 
@@ -43,33 +45,41 @@ def get_statistics(
     dict
         {
           "meta": {
-             "n_rays": int,                 # total rays per run (before filtering)
-             "n_repetitions": int,          # number of runs
-             "transmission": [mean%, std%], # mean/std of 100*(good/total)
+             "n_rays": int,
+             "n_repetitions": int,
+             "good_rays": [mean, std],
+             "transmission": [mean%, std%],
           },
           "energy": {"mean":[val,std], "std":[val,std], "fwhm":[val,std]},
-          "X":  {"mean":[val,std], "centroid":[val,std], "std":[val,std],
+          "X":  {"mean":[val,std], "std":[val,std],
                  "fwhm":[val,std], "skewness":[val,std], "kurtosis":[val,std]},
           "Y":  { ... same keys as X ... },
           "dX": { ... same keys as X ... },
           "dY": { ... same keys as X ... },
-          "fx": [val,std],   # from calc_focal_distance_from_particle_distribution
+          "fx": [val,std],
           "fy": [val,std],
         }
+
         Only keys for columns actually present in the input are included.
     """
 
     runs = _as_list(beams)
     if not all(isinstance(df, pd.DataFrame) for df in runs):
-        raise TypeError("get_beam_statistics: all inputs must be pandas DataFrames")
+        raise TypeError("get_statistics: all inputs must be pandas DataFrames")
 
     if len(runs) == 0:
-        raise ValueError("get_beam_statistics: empty input")
+        raise ValueError("get_statistics: empty input")
+
+    if not all("intensity" in df.columns for df in runs):
+        raise ValueError("get_statistics: all input DataFrames must contain an 'intensity' column")
 
     totals = [int(df.shape[0]) for df in runs]
     n_rays = totals[0]
     if any(t != n_rays for t in totals):
-        warnings.warn("Input DataFrames have different lengths; using the first for n_rays.", UserWarning)
+        warnings.warn(
+            "Input DataFrames have different lengths; using the first for n_rays.",
+            UserWarning,
+        )
 
     cleaned: List[pd.DataFrame] = []
     transmission_pct: List[float] = []
@@ -78,9 +88,13 @@ def get_statistics(
     for df in runs:
         total = int(df.shape[0])
         tmp = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
+
         good_counts.append(int(tmp.shape[0]))
+
         intensity = float(
-            pd.to_numeric(tmp["intensity"], errors="coerce").to_numpy(dtype=float).sum()
+            pd.to_numeric(tmp["intensity"], errors="coerce")
+            .to_numpy(dtype=float)
+            .sum()
         )
         transmission_pct.append(100.0 * intensity / total if total > 0 else np.nan)
 
@@ -88,10 +102,10 @@ def get_statistics(
 
     n_reps = len(cleaned)
     good_mean = float(np.nanmean(good_counts))
-    good_std  = float(np.nanstd(good_counts, ddof=0)) if n_reps > 1 else 0.0
+    good_std = float(np.nanstd(good_counts, ddof=0)) if n_reps > 1 else 0.0
 
     trans_mean = float(np.nanmean(transmission_pct))
-    trans_std  = float(np.nanstd(transmission_pct, ddof=0)) if n_reps > 1 else 0.0
+    trans_std = float(np.nanstd(transmission_pct, ddof=0)) if n_reps > 1 else 0.0
 
     result: dict = {
         "meta": {
@@ -103,73 +117,103 @@ def get_statistics(
     }
 
     coord_cols = [c for c in ("X", "Y") if c in cleaned[0].columns]
-    div_cols   = [c for c in ("dX", "dY") if c in cleaned[0].columns]
+    div_cols = [c for c in ("dX", "dY") if c in cleaned[0].columns]
 
     for col in coord_cols + div_cols:
-        per_run = [_per_run_stats(df, col) for df in cleaned]
+        per_run = [_per_run_weighted_stats(df, col) for df in cleaned]
         result[col] = _aggregate_dicts(per_run)
 
     energy_runs = []
     for df in cleaned:
-        e = df["energy"].to_numpy(dtype=float)
-        e = e[np.isfinite(e)]
-        if e.size == 0:
-            energy_runs.append({"mean": np.nan, "std": np.nan, "fwhm": np.nan})
-        else:
-            mu, std, *_ = _moments(e)
-            f = _fwhm(e)
-            energy_runs.append({"mean": mu, "std": std, "fwhm": f})
+        energy = df["energy"].to_numpy(dtype=float)
+        weights = df["intensity"].to_numpy(dtype=float)
+
+        mu, std, skew, kurt = _weighted_moments(energy, weights)
+        fwhm = _weighted_fwhm(energy, weights)
+
+        energy_runs.append(
+            {
+                "mean": mu,
+                "std": std,
+                "fwhm": fwhm,
+            }
+        )
 
     if energy_runs:
         metrics = {"mean": [], "std": [], "fwhm": []}
         for d in energy_runs:
             for k in metrics:
                 metrics[k].append(d[k])
-        result["energy"] = {k: [float(np.nanmean(v)), float(np.nanstd(v, ddof=0))]
-                            for k, v in metrics.items()}
 
-    fx_runs = np.array([_fl(df, 'X') for df in cleaned], dtype=float)
-    fy_runs = np.array([_fl(df, 'Y') for df in cleaned], dtype=float)
+        result["energy"] = {
+            k: [float(np.nanmean(v)), float(np.nanstd(v, ddof=0))]
+            for k, v in metrics.items()
+        }
+
+    fx_runs = np.array([_weighted_fl(df, "X") for df in cleaned], dtype=float)
+    fy_runs = np.array([_weighted_fl(df, "Y") for df in cleaned], dtype=float)
 
     if np.any(np.isfinite(fx_runs)):
-        result["fx"] = [float(np.nanmean(fx_runs)), float(np.nanstd(fx_runs, ddof=0))]
+        result["fx"] = [
+            float(np.nanmean(fx_runs)),
+            float(np.nanstd(fx_runs, ddof=0)),
+        ]
+
     if np.any(np.isfinite(fy_runs)):
-        result["fy"] = [float(np.nanmean(fy_runs)), float(np.nanstd(fy_runs, ddof=0))]
+        result["fy"] = [
+            float(np.nanmean(fy_runs)),
+            float(np.nanstd(fy_runs, ddof=0)),
+        ]
 
     if verbose:
-        def fmt_with_unc(val, unc, scale = 1.0, unit = "") -> str:
+
+        def fmt_with_unc(val, unc, scale=1.0, unit="") -> str:
             """
             Format value +- uncertainty with 1 significant figure for the uncertainty.
-            Scales by `scale` (e.g. 1e6 for um) and appends `unit`.
+
+            Scales by `scale` and appends `unit`.
             """
             if not np.isfinite(val) or not np.isfinite(unc):
                 return f"{val:.6g}{unit}"
+
             if unc == 0:
-                return f"{val*scale:.6g}{unit}"
+                return f"{val * scale:.6g}{unit}"
+
             v, u = val * scale, unc * scale
 
             exp = int(np.floor(np.log10(abs(u)))) if u != 0 else 0
             dec = -exp
             u_rounded = round(u, -exp)
             v_rounded = round(v, -exp)
-            return f"{v_rounded:.{max(dec,0)}f} +- {u_rounded:.{max(dec,0)}f}{unit}"
+
+            return f"{v_rounded:.{max(dec, 0)}f} +- {u_rounded:.{max(dec, 0)}f}{unit}"
 
         t_mean, t_std = result["meta"]["transmission"]
+
         print(f"\n\n{n_reps} x {n_rays} rays ")
-        print(f"> good rays: {fmt_with_unc(good_mean/n_rays, good_std/n_rays, scale=100, unit='%')}")
-        print(f"> intensity transmission: {fmt_with_unc(t_mean/100, t_std/100, scale=100, unit='%')}\n")
+        print(
+            f"> good rays: "
+            f"{fmt_with_unc(good_mean / n_rays, good_std / n_rays, scale=100, unit='%')}"
+        )
+        print(
+            f"> intensity transmission: "
+            f"{fmt_with_unc(t_mean / 100, t_std / 100, scale=100, unit='%')}\n"
+        )
 
         if "energy" in result:
             e = result["energy"]
-            if e['std'][0] < 1e-6:  # tolerance for "monochromatic"
+            if e["std"][0] < 1e-6:
                 print(f"Beam energy: {e['mean'][0]:.6g} eV (monochromatic)")
             else:
-                print(f"Beam energy: {e['mean'][0]:.6g} +- {e['std'][0]:.3g} eV "
-                    f"(FWHM: {e['fwhm'][0]:.3g} eV)")
+                print(
+                    f"Beam energy: {e['mean'][0]:.6g} +- {e['std'][0]:.3g} eV "
+                    f"(FWHM: {e['fwhm'][0]:.3g} eV)"
+                )
 
         for axis in ("X", "Y"):
             if axis not in result:
                 continue
+
             direction = "horizontal" if axis == "X" else "vertical"
             print(f"\n------------------ {direction}-plane:")
 
@@ -179,17 +223,18 @@ def get_statistics(
                 print(f"> Beam focusing at {fmt_with_unc(f_mean, f_std, unit=' m')}")
 
             stats_axis = result[axis]
-            stats_div  = result["dX" if axis == "X" else "dY"]
-            cen_mean, cen_std = stats_axis["centroid"]
+            stats_div = result["dX" if axis == "X" else "dY"]
 
-            print(f">> RMS beam size: "
-                  f"{fmt_with_unc(stats_axis['std'][0], stats_axis['std'][1], scale=1e6, unit=' um')} "
-                  f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' um')})")
-                #   f"1/e2: {fmt_with_unc(stats_axis['e2'][0], stats_axis['e2'][1], scale=1e6, unit=' um')})")
-            print(f">>> Centroid: {fmt_with_unc(cen_mean, cen_std, scale=1e6, unit=' um')}")
-            print(f">> Divergence: "
-                  f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' urad')} "
-                  f"(FWHM: {fmt_with_unc(stats_div['fwhm'][0], stats_div['fwhm'][1], scale=1e6, unit=' urad')})")            
+            print(
+                f">> RMS beam size: "
+                f"{fmt_with_unc(stats_axis['std'][0], stats_axis['std'][1], scale=1e6, unit=' um')} "
+                f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' um')})"
+            )
+            print(
+                f">> Divergence: "
+                f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' urad')} "
+                f"(FWHM: {fmt_with_unc(stats_div['fwhm'][0], stats_div['fwhm'][1], scale=1e6, unit=' urad')})"
+            )
             print(f">> Skewness: {fmt_with_unc(stats_axis['skewness'][0], stats_axis['skewness'][1])}")
             print(f">> Kurtosis: {fmt_with_unc(stats_axis['kurtosis'][0], stats_axis['kurtosis'][1])}")
 
@@ -205,42 +250,55 @@ def get_focal_distance(
     direction: str = "both",
     eps: float = 1e-16,
     ridge: float = 0.0,
-    huge_m: float = 1e23
+    huge_m: float = 1e23,
 ) -> Dict[str, float]:
     """
-    Calculate the focalization distance along X and Y axes based on phase space data.
+    Calculate the intensity-weighted focal distance along X and Y.
 
-    Uses a closed-form least-squares expression instead of iterative minimization:
-        x* = -Cov(axis, d_axis) / (Var(d_axis) + ridge)
-    where axis is {X, Y} and d_axis is {dX, dY}.
-    The ridge and eps prevent numerical instabilities.
+    Lost rays are removed via ``lost_ray_flag == 0`` before computing the focal
+    distance. If the ``intensity`` column is present, it is used as the ray
+    weight. Otherwise, all rays are assigned unit weight.
 
-    Args:
-        beam (pandas.DataFrame): 
-            PyOptiX beam (pd.DataFrame): typically from:
-                OpticalElement.get_diagram(...)
-                OpticalElement.get_impacts(...).
-        verbose (bool, optional): If True, prints diagnostic information. Defaults to False.
-        direction (str, optional): Direction to optimize ('x', 'y', or 'both'). Defaults to 'both'.
-        eps (float, optional): Regularization floor for denominator stability. Defaults to 1e-16.
-        ridge (float, optional): Extra ridge term added to denominator to stabilize variance. Defaults to 0.0.
-        huge_m (float, optional): Threshold distance beyond which the beam is flagged as near-collimated (effectively ∞). Defaults to 1e6.
+    Uses the closed-form weighted least-squares expression:
 
-    Returns:
-        Dict[str, float]: Dictionary with keys 'fx' and 'fy' for focalization distances [m].
-                          If a direction is not computed, its value is np.nan.
+        x* = -Cov_w(axis, d_axis) / (Var_w(d_axis) + ridge)
+
+    Parameters
+    ----------
+    beam : pandas.DataFrame
+        Beam dataframe containing X/dX and/or Y/dY columns.
+    verbose : bool, optional
+        If True, prints diagnostic information.
+    direction : {'x', 'y', 'both'}, optional
+        Direction to optimize.
+    eps : float, optional
+        Numerical floor for denominator stability.
+    ridge : float, optional
+        Extra ridge term added to the divergence variance.
+    huge_m : float, optional
+        Finite surrogate distance for an effectively infinite focus.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys ``'fx'`` and ``'fy'``.
     """
     if direction not in ("x", "y", "both"):
         warnings.warn(
             f"Invalid direction '{direction}' provided; falling back to 'both'.",
-            UserWarning
+            UserWarning,
         )
         direction = "both"
 
     if not isinstance(beam, pd.DataFrame):
-        raise TypeError("get_beam_focal_distance: beam must be a pandas DataFrame.")
+        raise TypeError("get_focal_distance: beam must be a pandas DataFrame.")
 
     beam = beam.loc[beam["lost_ray_flag"] == 0] if "lost_ray_flag" in beam.columns else beam
+
+    if "intensity" in beam.columns:
+        weights = beam["intensity"].to_numpy(dtype=float)
+    else:
+        weights = np.ones(len(beam), dtype=float)
 
     results = {"fx": np.nan, "fy": np.nan}
 
@@ -248,7 +306,10 @@ def get_focal_distance(
         fx = calc_focal_distance_from_particle_distribution(
             beam["X"].to_numpy(dtype=float),
             beam["dX"].to_numpy(dtype=float),
-            eps=eps, ridge=ridge, huge_m=huge_m
+            weights=weights,
+            eps=eps,
+            ridge=ridge,
+            huge_m=huge_m,
         )
         results["fx"] = fx
         if verbose and np.isfinite(fx):
@@ -258,7 +319,10 @@ def get_focal_distance(
         fy = calc_focal_distance_from_particle_distribution(
             beam["Y"].to_numpy(dtype=float),
             beam["dY"].to_numpy(dtype=float),
-            eps=eps, ridge=ridge, huge_m=huge_m
+            weights=weights,
+            eps=eps,
+            ridge=ridge,
+            huge_m=huge_m,
         )
         results["fy"] = fy
         if verbose and np.isfinite(fy):
@@ -266,134 +330,90 @@ def get_focal_distance(
 
     return results
 
+
 def calc_focal_distance_from_particle_distribution(
     position: np.ndarray,
     divergence: np.ndarray,
+    weights: Optional[np.ndarray] = None,
     *,
     eps: float = 1e-16,
     ridge: float = 0.0,
     huge_m: float = 1e26,
 ) -> float:
     """
-    Compute the signed focal distance x* minimizing std(position + x * divergence).
+    Compute the signed focal distance minimizing the weighted variance of
+    ``position + x * divergence``.
 
-    Closed-form least-squares:
-        x* = -Cov(position, divergence) / (Var(divergence) + ridge)
+    If ``weights`` is None, all particles are assigned unit weight.
 
-    Args:
-        position (np.ndarray): 1D array of transverse positions (e.g., X or Y) [m].
-        divergence (np.ndarray): 1D array of corresponding angular components (e.g., dX or dY) [rad].
-        eps (float): Numerical floor added to denominator for stability.
-        ridge (float): Additional ridge term to stabilize Var(divergence).
-        huge_m (float): Distance used as finite surrogate when focus is effectively at infinity.
+    Parameters
+    ----------
+    position : np.ndarray
+        1D array of transverse positions, e.g. X or Y [m].
+    divergence : np.ndarray
+        1D array of corresponding angular components, e.g. dX or dY [rad].
+    weights : np.ndarray, optional
+        1D array of statistical ray weights. If None, unit weights are used.
+    eps : float, optional
+        Numerical floor for denominator stability.
+    ridge : float, optional
+        Extra ridge term added to the divergence variance.
+    huge_m : float, optional
+        Finite surrogate distance for an effectively infinite focus.
 
-    Returns:
-        float: Signed focal distance in meters. If the optimum is effectively at
-               infinity, returns ±huge_m with the sign inferred from covariance.
-               Returns np.nan only if inputs are unusable (no finite samples).
+    Returns
+    -------
+    float
+        Signed focal distance in meters.
     """
-    # sanitize
     pos = np.asarray(position, dtype=float)
-    div = np.asarray(divergence, dtype=float)
-    finite = np.isfinite(pos) & np.isfinite(div)
-    if not np.any(finite):
-        return np.nan
 
-    pos, div = pos[finite], div[finite]
-    if pos.size == 0 or div.size == 0:
-        return np.nan
+    if weights is None:
+        weights = np.ones_like(pos, dtype=float)
 
-    # center
-    posc = pos - pos.mean()
-    divc = div - div.mean()
-
-    # moments
-    var_d  = float(np.dot(divc, divc) / divc.size)
-    cov_pd = float(np.dot(posc, divc) / divc.size)
-    denom  = (var_d if np.isfinite(var_d) else 0.0) + max(eps, ridge)
-
-    x_star = -cov_pd / denom if np.isfinite(cov_pd) else np.nan
-
-    # near-collimated / overflow handling
-    sign = -1.0 if (np.isfinite(cov_pd) and cov_pd > 0) else 1.0
-    return float(x_star) if np.isfinite(x_star) else float(sign * huge_m)
+    return _weighted_focal_distance(
+        position,
+        divergence,
+        weights,
+        eps=eps,
+        ridge=ridge,
+        huge_m=huge_m,
+    )
 
 
-def calc_fwhm_from_particle_distribution(profile: np.ndarray, bins: Union[int, None] = None) -> float:
+def calc_fwhm_from_particle_distribution(
+    profile: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+    bins: Union[int, None] = None,
+) -> float:
     """
-    Calculate the Full Width at Half Maximum (FWHM) of a 1D beam profile
-    using histogram + linear interpolation (no splines).
+    Calculate the FWHM of a 1D particle distribution.
 
-    - If `bins` is None, uses Freedman–Diaconis rule to set bin width; falls back to sqrt(N) if IQR=0.
-    - The algorithm finds the two half-maximum crossing points that straddle the global peak.
-    - Returns width (>0) in profile units, or the data span when the histogram
-      never goes below half max (flat-top/cropped case). Returns -1.0 only on failure.
+    If ``weights`` is None, all particles are assigned unit weight. If weights are
+    provided, the FWHM is computed from a weighted histogram.
 
-    Args:
-        profile (np.ndarray): 1D array representing particle positions (e.g., X or Y).
-        bins (int, optional): Number of bins for the histogram. If None, adaptive rules are applied.
+    Parameters
+    ----------
+    profile : np.ndarray
+        1D array representing particle positions, divergences, or energies.
+    weights : np.ndarray, optional
+        1D array of statistical ray weights. If None, unit weights are used.
+    bins : int or None, optional
+        Number of histogram bins. If None, an adaptive rule is used.
 
-    Returns:
-        float: FWHM value in the same units as `profile`. Returns -1.0 if computation fails.
+    Returns
+    -------
+    float
+        FWHM value in the same units as ``profile``. Returns -1.0 if computation
+        fails.
     """
     x = np.asarray(profile, dtype=float)
-    x = x[np.isfinite(x)]
-    if x.size < 2:
-        return -1.0
 
-    # choose bins
-    if bins is None:
-        q75, q25 = np.percentile(x, [75, 25])
-        iqr = q75 - q25
-        if iqr > 0:
-            h = 2.0 * iqr / (x.size ** (1/3))
-            bins = max(2, int(np.ceil((x.max() - x.min()) / h))) if h > 0 else int(np.sqrt(x.size))
-        else:
-            bins = int(np.sqrt(x.size))
-    bins = max(2, int(bins))
+    if weights is None:
+        weights = np.ones_like(x, dtype=float)
 
-    # histogram
-    counts, edges = np.histogram(x, bins=bins, density=True)
-    if not np.any(np.isfinite(counts)) or counts.max() <= 0:
-        return -1.0
+    return _weighted_fwhm(x, weights, bins=bins)
 
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    target = 0.5 * counts.max()
-
-    # crossings
-    above = counts >= target
-    flips = np.flatnonzero(above[:-1] ^ above[1:])
-
-    # --- NEW: flat-top / cropped fallback ---
-    # If we never cross below half-maximum anywhere, use the sampled span.
-    if flips.size == 0 and np.all(above):
-        return float(edges[-1] - edges[0])
-
-    if flips.size == 0:
-        return -1.0
-
-    def interp_cross(i):
-        y1, y2 = counts[i], counts[i+1]
-        x1, x2 = centers[i], centers[i+1]
-        if y2 == y1:  # flat at threshold
-            return 0.5 * (x1 + x2)
-        return x1 + (target - y1) * (x2 - y1) / (y2 - y1)
-
-    x_cross = np.array([interp_cross(i) for i in flips], dtype=float)
-    if x_cross.size < 2 or not np.all(np.isfinite(x_cross)):
-        return -1.0
-
-    # around the global peak
-    x_peak = centers[int(np.argmax(counts))]
-    left  = x_cross[x_cross <= x_peak]
-    right = x_cross[x_cross >= x_peak]
-
-    # If one side is missing (e.g., peak at the boundary), treat as cropped window.
-    if left.size == 0 or right.size == 0:
-        return float(edges[-1] - edges[0])
-
-    width = float(right[0] - left[-1])
-    return width if np.isfinite(width) and width > 0 else -1.0
 
 def calc_centroid_from_particle_distribution(
     profile: np.ndarray,
@@ -444,25 +464,36 @@ def calc_centroid_from_particle_distribution(
 
     return float(np.dot(x, w) / tw)
 
-def calc_moments_from_particle_distribution(profile: np.ndarray) -> Tuple[float, float, float, float]:
+
+def calc_moments_from_particle_distribution(
+    profile: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+) -> Tuple[float, float, float, float]:
     """
-    Return (mean, std, skewness, kurtosis_excess) using population definitions,
-    unweighted.
+    Return (mean, std, skewness, kurtosis_excess) using population definitions.
+
+    If ``weights`` is None, all particles are assigned unit weight. If weights are
+    provided, the moments are intensity-weighted.
+
+    Parameters
+    ----------
+    profile : np.ndarray
+        1D array representing particle positions, divergences, or energies.
+    weights : np.ndarray, optional
+        1D array of statistical ray weights. If None, unit weights are used.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        Mean, standard deviation, skewness, and excess kurtosis.
     """
-    x = _finite(profile)
-    if x.size == 0:
-        return (np.nan, np.nan, np.nan, np.nan)
-    mu = float(np.mean(x))
-    xc = x - mu
-    m2 = float(np.mean(xc**2))
-    if not np.isfinite(m2) or m2 <= 0.0:
-        return (mu, 0.0, np.nan, np.nan)
-    sigma = np.sqrt(m2)
-    m3 = float(np.mean(xc**3))
-    m4 = float(np.mean(xc**4))
-    skew = m3 / (sigma**3)
-    kurt_excess = m4 / (sigma**4) - 3.0
-    return (mu, sigma, skew, kurt_excess)
+    x = np.asarray(profile, dtype=float)
+
+    if weights is None:
+        weights = np.ones_like(x, dtype=float)
+
+    return _weighted_moments(x, weights)
+
 
 def calc_envelope_from_moments(
     mean: float,
@@ -631,26 +662,207 @@ def _aggregate_dicts(dicts):
         out[m] = [float(np.nanmean(vals)), float(np.nanstd(vals, ddof=0))]
     return out
     
-def _centroid(x):
-    return calc_centroid_from_particle_distribution(x)
+def _weighted_moments(
+    profile: np.ndarray,
+    weights: np.ndarray,
+) -> Tuple[float, float, float, float]:
+    """
+    Return intensity-weighted (mean, std, skewness, kurtosis_excess).
 
-def _fwhm(x):
-    return calc_fwhm_from_particle_distribution(x, bins=None)
+    Non-finite profile or weight entries are excluded pairwise.
+    Entries with zero weight do not contribute.
+    """
+    x = np.asarray(profile, dtype=float)
+    w = np.asarray(weights, dtype=float)
 
-def _moments(x):
-    return calc_moments_from_particle_distribution(x)
+    if x.shape != w.shape:
+        raise ValueError("profile and weights must have the same shape")
 
-def _fl(df, col):
-    return calc_focal_distance_from_particle_distribution(
-        df[col].to_numpy(dtype=float), df[f"d{col}"].to_numpy(dtype=float)
-    ) if {col, f"d{col}"}.issubset(df.columns) else np.nan
+    valid = np.isfinite(x) & np.isfinite(w) & (w > 0.0)
+    x = x[valid]
+    w = w[valid]
 
-def _per_run_stats(df, col):
+    if x.size == 0:
+        return (np.nan, np.nan, np.nan, np.nan)
+
+    w_sum = float(np.sum(w))
+    if w_sum <= 0.0 or not np.isfinite(w_sum):
+        return (np.nan, np.nan, np.nan, np.nan)
+
+    mu = float(np.sum(w * x) / w_sum)
+    xc = x - mu
+
+    m2 = float(np.sum(w * xc**2) / w_sum)
+    if not np.isfinite(m2) or m2 <= 0.0:
+        return (mu, 0.0, np.nan, np.nan)
+
+    sigma = float(np.sqrt(m2))
+    m3 = float(np.sum(w * xc**3) / w_sum)
+    m4 = float(np.sum(w * xc**4) / w_sum)
+
+    skew = m3 / sigma**3
+    kurt_excess = m4 / sigma**4 - 3.0
+
+    return (mu, sigma, skew, kurt_excess)
+
+def _weighted_fwhm(
+    profile: np.ndarray,
+    weights: np.ndarray,
+    bins: Union[int, None] = None,
+) -> float:
+    """
+    Calculate weighted FWHM of a 1D particle distribution.
+
+    Uses a weighted histogram plus linear interpolation around the half-maximum.
+    With unit weights, this reduces to the unweighted histogram result.
+    """
+    x = np.asarray(profile, dtype=float)
+    w = np.asarray(weights, dtype=float)
+
+    if x.shape != w.shape:
+        raise ValueError("profile and weights must have the same shape")
+
+    valid = np.isfinite(x) & np.isfinite(w) & (w > 0.0)
+    x = x[valid]
+    w = w[valid]
+
+    if x.size < 2:
+        return -1.0
+
+    if bins is None:
+        q75, q25 = np.percentile(x, [75, 25])
+        iqr = q75 - q25
+        if iqr > 0:
+            h = 2.0 * iqr / (x.size ** (1.0 / 3.0))
+            bins = max(2, int(np.ceil((x.max() - x.min()) / h))) if h > 0 else int(np.sqrt(x.size))
+        else:
+            bins = int(np.sqrt(x.size))
+
+    bins = max(2, int(bins))
+
+    counts, edges = np.histogram(x, bins=bins, weights=w, density=False)
+
+    if not np.any(np.isfinite(counts)) or counts.max() <= 0:
+        return -1.0
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    target = 0.5 * counts.max()
+
+    above = counts >= target
+    flips = np.flatnonzero(above[:-1] ^ above[1:])
+
+    if flips.size == 0 and np.all(above):
+        return float(edges[-1] - edges[0])
+
+    if flips.size == 0:
+        return -1.0
+
+    def interp_cross(i: int) -> float:
+        y1, y2 = counts[i], counts[i + 1]
+        x1, x2 = centers[i], centers[i + 1]
+
+        if y2 == y1:
+            return float(0.5 * (x1 + x2))
+
+        return float(x1 + (target - y1) * (x2 - x1) / (y2 - y1))
+
+    x_cross = np.array([interp_cross(i) for i in flips], dtype=float)
+
+    if x_cross.size < 2 or not np.all(np.isfinite(x_cross)):
+        return -1.0
+
+    x_peak = centers[int(np.argmax(counts))]
+    left = x_cross[x_cross <= x_peak]
+    right = x_cross[x_cross >= x_peak]
+
+    if left.size == 0 or right.size == 0:
+        return float(edges[-1] - edges[0])
+
+    width = float(right[0] - left[-1])
+    return width if np.isfinite(width) and width > 0 else -1.0
+
+def _weighted_focal_distance(
+    position: np.ndarray,
+    divergence: np.ndarray,
+    weights: np.ndarray,
+    *,
+    eps: float = 1e-16,
+    ridge: float = 0.0,
+    huge_m: float = 1e26,
+) -> float:
+    """
+    Compute the signed focal distance minimizing the weighted variance of
+    position + x * divergence.
+
+    x* = -Cov_w(position, divergence) / (Var_w(divergence) + ridge)
+    """
+    pos = np.asarray(position, dtype=float)
+    div = np.asarray(divergence, dtype=float)
+    w = np.asarray(weights, dtype=float)
+
+    if pos.shape != div.shape or pos.shape != w.shape:
+        raise ValueError("position, divergence, and weights must have the same shape")
+
+    valid = np.isfinite(pos) & np.isfinite(div) & np.isfinite(w) & (w > 0.0)
+    pos = pos[valid]
+    div = div[valid]
+    w = w[valid]
+
+    if pos.size == 0:
+        return np.nan
+
+    w_sum = float(np.sum(w))
+    if w_sum <= 0.0 or not np.isfinite(w_sum):
+        return np.nan
+
+    pos_mean = float(np.sum(w * pos) / w_sum)
+    div_mean = float(np.sum(w * div) / w_sum)
+
+    posc = pos - pos_mean
+    divc = div - div_mean
+
+    var_d = float(np.sum(w * divc**2) / w_sum)
+    cov_pd = float(np.sum(w * posc * divc) / w_sum)
+
+    denom = (var_d if np.isfinite(var_d) else 0.0) + max(eps, ridge)
+
+    x_star = -cov_pd / denom if np.isfinite(cov_pd) else np.nan
+
+    sign = -1.0 if (np.isfinite(cov_pd) and cov_pd > 0) else 1.0
+    return float(x_star) if np.isfinite(x_star) else float(sign * huge_m)
+
+def _weighted_fl(df: pd.DataFrame, col: str) -> float:
+    """
+    Weighted focal distance helper for dataframe columns.
+
+    col='X' uses X/dX.
+    col='Y' uses Y/dY.
+    """
+    dcol = f"d{col}"
+
+    if {col, dcol, "intensity"}.issubset(df.columns):
+        return _weighted_focal_distance(
+            df[col].to_numpy(dtype=float),
+            df[dcol].to_numpy(dtype=float),
+            df["intensity"].to_numpy(dtype=float),
+        )
+
+    return np.nan
+
+def _per_run_weighted_stats(df: pd.DataFrame, col: str) -> dict:
+    """
+    Compute weighted statistics for one dataframe column in one run.
+    """
     arr = df[col].to_numpy(dtype=float)
-    mu, std, skew, kurt = _moments(arr)
-    centroid = _centroid(arr)
-    fwhm = _fwhm(arr)
+    weights = df["intensity"].to_numpy(dtype=float)
+
+    mu, std, skew, kurt = _weighted_moments(arr, weights)
+    fwhm = _weighted_fwhm(arr, weights)
+
     return {
-        "mean": mu, "centroid": centroid, "std": std,
-        "fwhm": fwhm, "skewness": skew, "kurtosis": kurt
+        "mean": mu,
+        "std": std,
+        "fwhm": fwhm,
+        "skewness": skew,
+        "kurtosis": kurt,
     }

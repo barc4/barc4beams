@@ -1,40 +1,113 @@
-# barc4beams - Example Notebooks
+# barc4beams – Example Notebooks
 
-v2025.11.10
+This folder contains a curated set of Jupyter notebooks illustrating the core
+features and typical workflows of **barc4beams**.
 
-This folder contains a minimal set of Jupyter notebooks demonstrating the core functionalities of **barc4beams**.
-
----
-
-## Example 1:  Beam from ray-tracing codes
-**File:** `ex_01_beam_from_raytracing_codes.ipynb`
-
-Shows how to:
-- Imports a beam and convert it into the barc4beams standard format.  
-- Compute and print beam statistics (moments, FWHM, RMS, focal distances).  
-- Plot beam profiles, divergence, phase-space, and caustics.  
-- Save and reload standardized beams in `.h5` and `.json` formats.
-
+The examples are grouped by data origin and abstraction level:
+- Ray-tracing based workflows
+- Beam manipulation and ensembles
+- Wavefront-based reconstruction and propagation
 
 ---
 
-## Example 2: Beam from wave-propagation codes
-**File:** `ex_02_beam_from_wave_propagation_codes.ipynb`
+## 1. Beams from ray-tracing codes
 
-Shows how to:
-- Load near-field (NF) and far-field (FF) intensity maps from SRW (or WOFRY) stored in HDF5.  
-- Sample rays using `Beam.from_intensity()` following the algorithm from  
-  *Rebuffi et al.*, *J. Synchrotron Rad.* **27**, 1108–1120 (2020).  
-- Compare two reconstructions:
-  - FF-only → assumes a point source.
-  - NF+FF → includes finite spot size and angular spread.
-- Visualize phase-space, beam profiles, and caustic evolution.
+### Example 1a — Mirror focusing
+**File:** `ex_01a_beam_from_raytracing_codes-mirror_focusing.ipynb`
+
+- Import a beam from ray-tracing output
+- Convert to the standardized format
+- Compute beam statistics (moments, RMS, FWHM, focal distances)
+- Visualize size, divergence, phase-space, and caustics
+
+**Key point:**  
+Monochromatic-like case where intensity is approximately uniform across energies.
 
 ---
 
-## Example 3: Synthetic beam collection
-**File:** `ex_03_beam_collection.ipynb`
+### Example 1b — CRL focusing (polychromatic case)
+**File:** `ex_01b_beam_from_raytracing_code-crl_focusing.ipynb`
 
-Shows how to:
-- Compute per-run and merged beam statistics.  
-- Merge multiple runs into a single standardized beam and visualize results.
+Same workflow as 1a, but:
+
+- Includes a realistic energy bandwidth
+- Intensity is distributed across energies
+
+**Key point:**  
+Demonstrates the impact of spectral bandwidth on beam properties.
+
+---
+
+## 2. Beam collections and ensembles
+
+### Example 2a — Beam collection
+**File:** `ex_02a_beam_collection.ipynb`
+
+- Handle multiple beams (independent runs)
+- Compute statistics per run
+- Merge beams into a single dataset
+- Visualize aggregated results
+
+---
+
+### Example 2b — BeamEnsemble
+**File:** `ex_02b_beam_ensemble.ipynb`
+
+- Use the `BeamEnsemble` class
+- Compute ensemble-level statistics
+- Store and reload ensembles
+- Compare runs in a structured way
+
+**Key point:**  
+Preferred abstraction for handling multiple realizations consistently.
+
+---
+
+## 3. Beams from wavefront propagation
+
+### Example 3a — Sampling from intensity (NF/FF)
+**File:** `ex_03a_beam_from_wave_propagation_codes-NF_FF.ipynb`
+
+- Load near-field (NF) and far-field (FF) intensity maps
+- Sample rays using `Beam.from_intensity()`
+
+This sampling strategy follows the approach described in:  
+Rebuffi et al., *J. Synchrotron Rad.* **27**, 1108–1120 (2020).
+
+- Compare:
+  - FF-only (point-source assumption)
+  - NF+FF (finite source size)
+
+---
+
+### Example 3b — Beam from intensity and phase
+**File:** `ex_03b_beam_from_wave_propagation_codes-intensity_phase.ipynb`
+
+- Reconstruct rays from intensity **and phase**
+- Compute local wavefront slopes from the complex field
+- Generate a beam consistent with wavefront propagation
+
+**Key point:**  
+Inverse approach inspired by X-ray speckle tracking methods as described in:
+Celestre et al., *J. Synchrotron Rad.* **32**, 180–199 (2025).
+
+---
+
+### Example 3c — Applying a complex wavefront
+**File:** `ex_03c_beam_from_wave_propagation_codes-intensity_apply_complex_wavefront.ipynb`
+
+- Start from a reconstructed beam
+- Apply a complex wavefront (e.g. CRL errors)
+- Update intensity and ray directions
+
+**Key point:**  
+Bridges wave optics and ray-based propagation.
+
+---
+
+## Notes
+
+- All examples rely on the standardized beam format used throughout
+  **barc4beams**.
+- The notebooks are intentionally minimal and designed as building blocks
+  for custom workflows.

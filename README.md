@@ -23,9 +23,11 @@ phase space, and caustic visualization.
 See **examples/README.md** for detailed descriptions of the  
 three reference notebooks:
 
-1. Beam import from ray-tracing codes  
-2. Beam sampling from intensity maps  
-3. Beam collections and statistical aggregation
+1. Beams from ray-tracing codes  
+2. Beam collections and ensembles  
+3. Beams from wavefront propagation  
+   - intensity-based sampling (Rebuffi et al., 2020)  
+   - phase-aware reconstruction (speckle tracking principles)  
 
 ---
 

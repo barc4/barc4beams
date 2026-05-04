@@ -1,40 +1,160 @@
-Usage and examples
-==================
+Usage
+=====
 
-The repository ships with three Jupyter notebooks illustrating the core
-workflows.
+This section provides a concise overview of how to use **barc4beams**
+through its main workflows.
 
-Example 1: Beam from ray-tracing codes
---------------------------------------
+The library is organized around a central abstraction: the **Beam**.
 
-File: ``ex_01_beam_from_raytracing_codes.ipynb``
+---
 
-This notebook shows how to:
+Core concepts
+-------------
 
-* Import a beam and convert it into the barc4beams standard format.
-* Compute and print beam statistics (moments, FWHM, RMS, focal distances).
-* Plot beam profiles, divergence, phase-space, and caustics.
-* Save and reload standardized beams in ``.h5`` and ``.json`` formats.
+Beam
+~~~~
 
-Example 2: Beam from wave-propagation codes
--------------------------------------------
+A ``Beam`` represents a collection of rays in a standardized format:
 
-File: ``ex_02_beam_from_wave_propagation_codes.ipynb``
+- positions: (x, y)
+- directions: (x', y')
+- energy
+- intensity
+- polarization components
+- lost-ray flags
 
-This notebook shows how to:
+All operations (statistics, visualization, transformations) are defined
+on this structure.
 
-* Load near-field and far-field intensity maps from SRW/WOFRY stored in HDF5.
-* Sample rays using :class:`barc4beams.Beam.from_intensity`.
-* Compare reconstructions using FF-only and NF+FF information.
-* Visualize phase-space, beam profiles, and caustic evolution.
+---
 
-Example 3: Synthetic beam collection
-------------------------------------
+BeamEnsemble
+~~~~~~~~~~~~
 
-File: ``ex_03_beam_collection.ipynb``
+A ``BeamEnsemble`` is a collection of ``Beam`` instances representing
+multiple realizations (e.g. scans, simulations, tolerances).
 
-This notebook shows how to:
+It provides:
 
-* Compute per-run and merged beam statistics.
-* Merge multiple runs into a single standardized beam.
-* Visualize the resulting distributions.
+- ensemble statistics
+- structured comparison between runs
+- unified save/load interface
+
+---
+
+Main workflows
+--------------
+
+1. Beam from ray-tracing
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Typical pipeline:
+
+1. Import raw ray-tracing data
+2. Convert to standard format
+3. Analyze and visualize
+
+This is illustrated in:
+
+- Example 1a (monochromatic-like case)
+- Example 1b (polychromatic beam)
+
+---
+
+2. Beam collections and ensembles
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two levels of abstraction:
+
+- Manual handling of multiple beams → ``Beam`` (Example 2a)
+- Structured handling → ``BeamEnsemble`` (Example 2b)
+
+Use ``BeamEnsemble`` when:
+
+- working with repeated simulations
+- performing statistical analysis across runs
+- saving/loading grouped datasets
+
+---
+
+3. Beam from wavefront data
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two complementary approaches:
+
+**Intensity-based sampling**
+
+- Uses NF and/or FF intensity
+- Assumes no phase information
+- Implemented via ``Beam.from_intensity()``
+
+(Example 3a)
+
+---
+
+**Phase-aware reconstruction**
+
+- Uses complex field (amplitude + phase)
+- Computes local slopes from the wavefront
+- Generates physically consistent rays
+
+(Example 3b)
+
+This follows principles similar to X-ray speckle tracking,
+but applied in reverse (wavefront → rays).
+
+---
+
+4. Applying wavefronts to beams
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A beam can be modified by applying a complex wavefront:
+
+- modifies ray directions (via phase gradients)
+- updates intensity
+- flags invalid rays if needed
+
+(Example 3c)
+
+This enables hybrid workflows combining:
+
+- ray-tracing
+- wave optics
+- error propagation
+
+---
+
+Visualization and statistics
+----------------------------
+
+The library provides:
+
+- beam size and divergence plots
+- phase-space visualization
+- caustics
+- intensity-aware statistics
+
+All statistics are computed using per-ray weights (intensity).
+
+---
+
+Persistence
+-----------
+
+Objects can be saved and reloaded:
+
+- ``Beam`` → HDF5 + JSON metadata
+- ``BeamEnsemble`` → grouped HDF5 + statistics
+
+---
+
+Summary
+-------
+
+Typical usage patterns:
+
+- Ray-tracing → Beam → analysis
+- Multiple runs → BeamEnsemble → statistics
+- Wavefront → Beam → hybrid propagation
+
+Refer to the example notebooks for concrete implementations.

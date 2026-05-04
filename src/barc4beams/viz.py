@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: CECILL-2.1
-# Copyright (c) 2025 Synchrotron SOLEIL
+# Copyright (c) 2026 ESRF - the European Synchrotron
 
 """
 viz.py - plotting routines for beams and beamline layouts.
@@ -27,7 +27,10 @@ Number = Union[int, float]
 RangeT = Optional[Tuple[Optional[Number], Optional[Number]]]
 BinsT  = Optional[Union[int, Tuple[int, int]]]
 ModeT  = Union[Literal["scatter", "hist2d"], str]
-
+ScatterWeightMode = Union[
+    Literal["auto", "none", "resample", "color", "alpha", "threshold"],
+    str,
+]
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -54,10 +57,15 @@ def plot_beam(
     showYhist=True,
     envelope=False,
     envelope_method="edgeworth",
+    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
-    z_offset: float = 0.0
+    z_offset: float = 0.0,
+    scatter_weight_mode: ScatterWeightMode = "auto",
+    scatter_sample_size: Optional[int] = None,
+    scatter_seed: Optional[int] = 12345,
+    scatter_threshold: float = 0.0,
 ):
     """
     Plot the spatial footprint of a standardized beam (X vs Y), with optional marginals
@@ -105,11 +113,24 @@ def plot_beam(
     if apply_style:
         start_plotting(k)
 
-    x, y, xl, yl = _prep_beam_xy(df, kind="size", z_offset=z_offset)
+    x, y, weights, xl, yl = _prep_beam_xy(
+        df,
+        kind="size",
+        z_offset=z_offset,
+        weight_by_intensity=weight_by_intensity,
+    )
+
+    if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     fig, axes = _common_xy_plot(
-        x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+        x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
-        showXhist, showYhist, envelope, envelope_method
+        showXhist, showYhist, envelope, envelope_method,
+        scatter_weight_mode=scatter_weight_mode,
+        scatter_sample_size=scatter_sample_size,
+        scatter_seed=scatter_seed,
+        scatter_threshold=scatter_threshold,
     )
     if plot:
         plt.show()
@@ -133,10 +154,15 @@ def plot_divergence(
     showYhist=True,
     envelope=False,
     envelope_method="edgeworth",
+    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
-    z_offset: float = 0.0
+    z_offset: float = 0.0,
+    scatter_weight_mode: ScatterWeightMode = "auto",
+    scatter_sample_size: Optional[int] = None,
+    scatter_seed: Optional[int] = 12345,
+    scatter_threshold: float = 0.0,
 ):
     """
     Plot the beam divergence (dX vs dY) in µrad with optional marginals and envelopes.
@@ -149,11 +175,24 @@ def plot_divergence(
     if apply_style:
         start_plotting(k)
 
-    x, y, xl, yl = _prep_beam_xy(df, kind="div", z_offset=0)
+    x, y, weights, xl, yl = _prep_beam_xy(
+        df,
+        kind="div",
+        z_offset=0,
+        weight_by_intensity=weight_by_intensity,
+    )
+
+    if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     fig, axes = _common_xy_plot(
-        x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+        x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
-        showXhist, showYhist, envelope, envelope_method
+        showXhist, showYhist, envelope, envelope_method,
+        scatter_weight_mode=scatter_weight_mode,
+        scatter_sample_size=scatter_sample_size,
+        scatter_seed=scatter_seed,
+        scatter_threshold=scatter_threshold,
     )
     if plot:
         plt.show()
@@ -177,10 +216,15 @@ def plot_phase_space(
     showYhist=True,
     envelope=False,
     envelope_method="edgeworth",
+    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
     z_offset: float = 0.0,
+    scatter_weight_mode: ScatterWeightMode = "auto",
+    scatter_sample_size: Optional[int] = None,
+    scatter_seed: Optional[int] = 12345,
+    scatter_threshold: float = 0.0,
 ):
     """
     Plot phase space for one or both planes: (X vs dX) and/or (Y vs dY), in µm/µrad.
@@ -207,11 +251,26 @@ def plot_phase_space(
         return f"{stem}{suf}.{ext}"
 
     def _one(d: str, save_path: Optional[str]):
-        x, y, xl, yl = _prep_beam_xy(df, kind="ps", direction=d, z_offset=z_offset)
+        x, y, weights, xl, yl = _prep_beam_xy(
+            df,
+            kind="ps",
+            direction=d,
+            z_offset=z_offset,
+            weight_by_intensity=weight_by_intensity,
+        )
+
+        bins_local = bins
+        if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins_local is None:
+            bins_local = _auto_bins_from_trimmed_weights(weights)
+
         return _common_xy_plot(
-            x, y, xl, yl, _resolve_mode(mode), aspect_ratio, color,
-            x_range, y_range, bins, bin_width, bin_method, dpi, save_path,
-            showXhist, showYhist, envelope, envelope_method
+            x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+            x_range, y_range, bins_local, bin_width, bin_method, dpi, save_path,
+            showXhist, showYhist, envelope, envelope_method,
+            scatter_weight_mode=scatter_weight_mode,
+            scatter_sample_size=scatter_sample_size,
+            scatter_seed=scatter_seed,
+            scatter_threshold=scatter_threshold,
         )
 
     if dnorm == "both":
@@ -261,6 +320,7 @@ def plot_caustic(
     z = np.asarray(caustic["optical_axis"], dtype=float)
     cm = caustic.get("caustic", {})
     Xmat = cm.get("X", None); Ymat = cm.get("Y", None)
+    Wmat = cm.get("intensity", caustic.get("intensity", None))
     if which in ("x", "both") and Xmat is None:
         raise ValueError("X matrix not present in caustic['caustic']['X'].")
     if which in ("y", "both") and Ymat is None:
@@ -296,10 +356,29 @@ def plot_caustic(
 
     def _plot_one(axis_key: str, mat):
         pos_edges = _pos_edges(mat, xy_range)
-        P, N = np.asarray(mat).shape
+        mat = np.asarray(mat, dtype=float)
+        P, N = mat.shape
         z_rep = np.repeat(z, N)
-        pos_um = np.asarray(mat, dtype=float).reshape(P * N) * 1e6
-        H, ze, xe = np.histogram2d(z_rep, pos_um, bins=[z_edges, pos_edges])
+        pos_um = mat.reshape(P * N) * 1e6
+
+        weights = None
+        using_weights = False
+        if Wmat is not None:
+            w = np.asarray(Wmat, dtype=float)
+            if w.shape == mat.shape:
+                weights = w.reshape(P * N)
+                std_weight = np.nanstd(weights)
+                mean_weight = np.nanmean(weights)
+                if np.abs(std_weight/mean_weight) >= 1e-6:
+                    max_weight = np.percentile(weights, 99.99)
+                    min_weight = np.percentile(weights, 00.01)
+                    weights = (weights-min_weight)/(max_weight-min_weight)
+                    weights = np.clip(weights, 0, 1)
+                else:
+                    weights = np.ones(len(weights), dtype=float)
+                using_weights = True
+
+        H, ze, xe = np.histogram2d(z_rep, pos_um, bins=[z_edges, pos_edges], weights=weights)
 
         if top_stat:
             fig = plt.figure(figsize=(10, 5.0), dpi=dpi)
@@ -333,7 +412,7 @@ def plot_caustic(
             cb = fig.colorbar(mesh, cax=cax, orientation='vertical')
         else:
             cb = fig.colorbar(mesh, ax=ax)
-        cb.set_label("rays")
+        cb.set_label("weighted rays" if using_weights else "rays")
 
         if axtop is not None:
             if top_stat.lower() == "fwhm":
@@ -382,11 +461,12 @@ def plot_energy(
     bin_method: int = 0,
     dpi: int = 100,
     path: Optional[str] = None,
+    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
 ) -> Tuple[plt.Figure, plt.Axes]:
-    """energy distribution N vs E (eV), 1D histogram in counts."""
+    """Energy distribution vs E (eV), optionally intensity-weighted."""
     fig_siz = 4.8
 
     if apply_style:
@@ -394,11 +474,16 @@ def plot_energy(
 
     df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
     e = pd.to_numeric(df2["energy"], errors="coerce").to_numpy(dtype=float)
-    e = e[np.isfinite(e)]
+    weights = _beam_weights(df2, weight_by_intensity=weight_by_intensity)
+
+    valid = np.isfinite(e) & np.isfinite(weights) & (weights > 0.0)
+    e = e[valid]
+    weights = weights[valid]
+
     if e.size == 0:
         fig, ax = plt.subplots(figsize=(fig_siz*6.4/4.8, fig_siz), dpi=dpi)
         ax.set_xlabel("energy [eV]")
-        ax.set_ylabel("[rays]")
+        ax.set_ylabel("[weighted rays]" if weight_by_intensity else "[rays]")
         ax.text(0.5, 0.5, "no finite energies", ha="center", va="center", transform=ax.transAxes)
         if path:
             fig.savefig(path, dpi=dpi, bbox_inches="tight")
@@ -406,10 +491,13 @@ def plot_energy(
             plt.show()
         return fig, ax
 
+    if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     nbx, _ = _auto_bins(e, e, bins, bin_width, bin_method)
     xr = _resolve_range(e, None)
 
-    counts, edges = np.histogram(e, bins=nbx, range=xr)
+    counts, edges = np.histogram(e, bins=nbx, range=xr, weights=weights)
     centers = 0.5 * (edges[:-1] + edges[1:])
 
     fig, ax = plt.subplots(figsize=(fig_siz*6.4/4.8, fig_siz), dpi=dpi)
@@ -423,13 +511,80 @@ def plot_energy(
     ax.grid(which="major", linestyle="--", linewidth=0.3, color="dimgrey")
     ax.grid(which="minor", linestyle="--", linewidth=0.3, color="lightgrey")
     ax.set_xlabel("energy [eV]")
-    ax.set_ylabel("[rays]")
+    ax.set_ylabel("[weighted rays]" if weight_by_intensity else "[rays]")
     ax.locator_params(nbins=5)
 
     if path:
         fig.savefig(path, dpi=dpi, bbox_inches="tight")
     if plot:
         plt.show()
+    return fig, ax
+
+def plot_intensity(
+    df: pd.DataFrame,
+    *,
+    bins: Optional[Union[int, Tuple[int, int]]] = None,
+    bin_width: Optional[Number] = None,
+    bin_method: int = 0,
+    dpi: int = 100,
+    path: Optional[str] = None,
+    weight_by_intensity: bool = False,
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True,
+) -> Tuple[plt.Figure, plt.Axes]:
+    """Intensity distribution vs I, optionally intensity-weighted."""
+    fig_siz = 4.8
+
+    if apply_style:
+        start_plotting(k)
+
+    df2 = df.loc[df["lost_ray_flag"] == 0] if "lost_ray_flag" in df.columns else df
+    intensity = pd.to_numeric(df2["intensity"], errors="coerce").to_numpy(dtype=float)
+    weights = _beam_weights(df2, weight_by_intensity=weight_by_intensity)
+
+    valid = np.isfinite(intensity) & np.isfinite(weights) & (weights > 0.0)
+    intensity = intensity[valid]
+    weights = weights[valid]
+
+    if intensity.size == 0:
+        fig, ax = plt.subplots(figsize=(fig_siz * 6.4 / 4.8, fig_siz), dpi=dpi)
+        ax.set_xlabel("intensity [arb]")
+        ax.set_ylabel("[weighted rays]" if weight_by_intensity else "[rays]")
+        ax.text(0.5, 0.5, "no finite intensities", ha="center", va="center", transform=ax.transAxes)
+        if path:
+            fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        if plot:
+            plt.show()
+        return fig, ax
+
+    if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
+    nbx, _ = _auto_bins(intensity, intensity, bins, bin_width, bin_method)
+    xr = _resolve_range(intensity, None)
+
+    counts, edges = np.histogram(intensity, bins=nbx, range=xr, weights=weights)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, ax = plt.subplots(figsize=(fig_siz * 6.4 / 4.8, fig_siz), dpi=dpi)
+
+    ax.fill_between(centers, 0, counts, step="mid", color="steelblue", alpha=0.5)
+    ax.step(edges[:-1], counts, where="post", color="steelblue", linewidth=1.0)
+
+    ax.set_xlim(xr)
+    ax.set_ylim(0, 1.05 * max(1, counts.max()))
+    ax.grid(which="major", linestyle="--", linewidth=0.3, color="dimgrey")
+    ax.grid(which="minor", linestyle="--", linewidth=0.3, color="lightgrey")
+    ax.set_xlabel("intensity [arb]")
+    ax.set_ylabel("[weighted rays]" if weight_by_intensity else "[rays]")
+    ax.locator_params(nbins=5)
+
+    if path:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    if plot:
+        plt.show()
+
     return fig, ax
 
 def plot_energy_vs_intensity(
@@ -447,11 +602,15 @@ def plot_energy_vs_intensity(
     path: Optional[str] = None,
     showXhist: bool = True,
     showYhist: bool = True,
-    envelope: bool = False,
     envelope_method: str = "edgeworth",
+    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
+    scatter_weight_mode: ScatterWeightMode = "auto",
+    scatter_sample_size: Optional[int] = None,
+    scatter_seed: Optional[int] = 12345,
+    scatter_threshold: float = 0.0,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
     """2D plot with X=energy [eV], Y=Intensity [arb], with optional marginals/envelopes; never silently shows."""
     if apply_style:
@@ -463,9 +622,13 @@ def plot_energy_vs_intensity(
 
     xl = r"energy [eV]"
     yl = r"$I$ [arb]"
-    print(_resolve_mode(mode))
+
+    weights = _beam_weights(df2, weight_by_intensity=weight_by_intensity)
+    if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
+        bins = _auto_bins_from_trimmed_weights(weights)
+
     fig, axes = _common_xy_plot(
-        x, y, xl, yl,
+        x, y, weights, xl, yl,
         mode=_resolve_mode(mode),
         aspect_ratio=aspect_ratio,
         color=color,
@@ -480,11 +643,14 @@ def plot_energy_vs_intensity(
         showYhist=showYhist,
         envelope=False,
         envelope_method=envelope_method,
+        scatter_weight_mode=scatter_weight_mode,
+        scatter_sample_size=scatter_sample_size,
+        scatter_seed=scatter_seed,
+        scatter_threshold=scatter_threshold,
     )
     if plot:
         plt.show()
     return fig, axes
-
 
 # ---------------------------------------------------------------------------
 # style settings
@@ -542,6 +708,7 @@ def plotting_style(k: float = 1.0):
 def _common_xy_plot(
     x: np.ndarray,
     y: np.ndarray,
+    weights: Optional[np.ndarray],
     x_label: str,
     y_label: str,
     mode: ModeT,
@@ -558,15 +725,28 @@ def _common_xy_plot(
     showYhist: bool = True,
     envelope: bool = True,
     envelope_method: Literal["edgeworth", "pearson", "maxent"] = "edgeworth",
+    scatter_weight_mode: ScatterWeightMode = "auto",
+    scatter_sample_size: Optional[int] = None,
+    scatter_seed: Optional[int] = 12345,
+    scatter_threshold: float = 0.0,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
     """Build core XY figure with central scatter/hist2d and optional 1D marginals/envelopes."""
 
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    weights = _sanitize_weights(weights, x.shape)
+
+    finite_xy = np.isfinite(x) & np.isfinite(y)
+    x_plot = x[finite_xy]
+    y_plot = y[finite_xy]
+
+    finite_weighted = finite_xy & np.isfinite(weights) & (weights > 0.0)
+    x_weighted = x[finite_weighted]
+    y_weighted = y[finite_weighted]
+    w_weighted = weights[finite_weighted]
+
     x_range = _resolve_range(x, x_range)
     y_range = _resolve_range(y, y_range)
-
-    # if aspect_ratio is True:
-    #     x_range = (np.min([x_range[0], y_range[0]]), np.max([x_range[1], y_range[1]]))
-    #     y_range = x_range
 
     nb_of_bins = _auto_bins(x, y, bins, bin_width, bin_method)
 
@@ -612,58 +792,136 @@ def _common_xy_plot(
         ax_histx.tick_params(direction='in', which='both', labelbottom=False, top=True, right=True, colors='black')
         for sp in ('bottom', 'top', 'right', 'left'):
             ax_histx.spines[sp].set_color('black')
-        ax_histx.hist(x, bins=nb_of_bins[0], range=x_range,
+        ax_histx.hist(x_weighted, bins=nb_of_bins[0], range=x_range, weights=w_weighted,
                     color='steelblue', linewidth=1, edgecolor='steelblue',
                     histtype='step', alpha=1)
         ax_histx.set_xlim(x_range)
 
-        hx, _ = np.histogram(x, nb_of_bins[0], range=x_range)
+        hx, _ = np.histogram(x_weighted, nb_of_bins[0], range=x_range, weights=w_weighted)
         ax_histx.set_ylim(-0.05 * hx.max(), 1.05 * max(1, hx.max()))
         ax_histx.locator_params(tight=True, nbins=3)
         ax_histx.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histx.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
-        ax_histx.set_ylabel('[rays]', fontsize='medium')
+        ax_histx.set_ylabel(_weight_axis_label(w_weighted), fontsize='medium')
         if envelope:
-            _overlay_envelope_on_hist(ax_histx, x, x_range, nb_of_bins[0],
-                                    horizontal=False, method=envelope_method)
+            _overlay_envelope_on_hist(ax_histx, x_weighted, x_range, nb_of_bins[0],
+                                    weights=w_weighted, horizontal=False, method=envelope_method)
 
     if showYhist:
         ax_histy = fig.add_axes(rect_histy, sharey=ax_image)
         ax_histy.tick_params(direction='in', which='both', labelleft=False, top=True, right=True, colors='black')
         for sp in ('bottom', 'top', 'right', 'left'):
             ax_histy.spines[sp].set_color('black')
-        ax_histy.hist(y, bins=nb_of_bins[1], range=y_range,
+        ax_histy.hist(y_weighted, bins=nb_of_bins[1], range=y_range, weights=w_weighted,
                     orientation='horizontal', color='steelblue',
                     linewidth=1, edgecolor='steelblue', histtype='step', alpha=1)
         ax_histy.set_ylim(y_range)
-        hy, _ = np.histogram(y, nb_of_bins[1], range=y_range)
+        hy, _ = np.histogram(y_weighted, nb_of_bins[1], range=y_range, weights=w_weighted)
         ax_histy.set_xlim(-0.05 * hy.max(), 1.05 * max(1, hy.max()))
         ax_histy.locator_params(tight=True, nbins=3)
         ax_histy.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histy.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
-        ax_histy.set_xlabel('[rays]', fontsize='medium')
+        ax_histy.set_xlabel(_weight_axis_label(w_weighted), fontsize='medium')
         if envelope:
-            _overlay_envelope_on_hist(ax_histy, y, y_range, nb_of_bins[1],
-                                    horizontal=True, method=envelope_method)
+            _overlay_envelope_on_hist(ax_histy, y_weighted, y_range, nb_of_bins[1],
+                                    weights=w_weighted, horizontal=True, method=envelope_method)
 
     if mode == 'scatter':
         s, edgecolors, marker, linewidths = 2.5, 'face', '.', 1
-        if color is None or color == 0:
-            im = ax_image.scatter(x, y, color=_color_palette(0), alpha=1,
-                                  edgecolors=edgecolors, s=s, marker=marker, linewidths=linewidths)
+
+        scatter_mode = _resolve_scatter_weight_mode(scatter_weight_mode, weights)
+
+        xs, ys, ws = _scatter_arrays_from_weights(
+            x=x,
+            y=y,
+            weights=weights,
+            mode=scatter_mode,
+            sample_size=scatter_sample_size,
+            seed=scatter_seed,
+            threshold=scatter_threshold,
+        )
+
+        if xs.size == 0:
+            im = ax_image.scatter([], [])
+            
+        elif scatter_mode == "color":
+            idx = np.argsort(ws)
+            xs = xs[idx]
+            ys = ys[idx]
+            ws = ws[idx]
+
+            cmap = _color_palette(color or 1)
+            im = ax_image.scatter(
+                xs, ys,
+                c=ws,
+                cmap=cmap,
+                vmin=0.0,
+                vmax=1.0,
+                edgecolors=edgecolors,
+                s=s,
+                marker=marker,
+                linewidths=linewidths,
+            )
+
+        elif scatter_mode == "alpha":
+            if color is None or color == 0:
+                rgba = np.tile(np.array([[0.0, 0.0, 0.0, 1.0]]), (xs.size, 1))
+            else:
+                xy = np.vstack([xs, ys])
+                z = gaussian_kde(xy)(xy)
+                z = z / z.max()
+                rgba = _color_palette(color)(z)
+
+            rgba[:, -1] = ws
+            im = ax_image.scatter(
+                xs, ys,
+                color=rgba,
+                edgecolors=edgecolors,
+                s=s,
+                marker=marker,
+                linewidths=linewidths,
+            )
+
         else:
-            xy = np.vstack([x, y])
-            z = gaussian_kde(xy)(xy)
-            z = z / z.max()
-            cmap = _color_palette(color)
-            clr = cmap(z)
-            im = ax_image.scatter(x, y, color=clr, alpha=1, edgecolors=edgecolors,
-                                  s=s, marker=marker, linewidths=linewidths)
+            # "none", "resample", and "threshold":
+            # keep the legacy KDE-density coloring unless color is 0/None.
+            if color is None or color == 0:
+                im = ax_image.scatter(
+                    xs, ys,
+                    color=_color_palette(0),
+                    alpha=1,
+                    edgecolors=edgecolors,
+                    s=s,
+                    marker=marker,
+                    linewidths=linewidths,
+                )
+            else:
+                xy = np.vstack([xs, ys])
+                z = gaussian_kde(xy)(xy)
+                z = z / z.max()
+                cmap = _color_palette(color)
+                clr = cmap(z)
+                im = ax_image.scatter(
+                    xs, ys,
+                    color=clr,
+                    alpha=1,
+                    edgecolors=edgecolors,
+                    s=s,
+                    marker=marker,
+                    linewidths=linewidths,
+                )
+
         ax_image.grid(linestyle='--', linewidth=0.3, color='dimgrey')
 
     elif mode == 'hist2d':
         nbx, nby = nb_of_bins if isinstance(nb_of_bins, (tuple, list)) else (nb_of_bins, nb_of_bins)
-        im = ax_image.hist2d(x, y, bins=[nbx, nby], cmap=_color_palette(color or 2))
+        im = ax_image.hist2d(
+            x_weighted,
+            y_weighted,
+            bins=[nbx, nby],
+            weights=w_weighted,
+            cmap=_color_palette(color or 2),
+        )
     else:
         raise ValueError("mode must be 'scatter' or 'hist2d'.")
 
@@ -682,20 +940,23 @@ def _common_xy_plot(
 def _prep_beam_xy(
     df: pd.DataFrame,
     *,
-    kind: str,       
+    kind: str,
     direction: Optional[str] = None,
-    z_offset: float = 0.0
+    z_offset: float = 0.0,
+    weight_by_intensity: bool = True,
 ):
-    """Return (x, y, x_label, y_label) arrays scaled to µm or µrad, filtering alive rays."""
+    """Return (x, y, weights, x_label, y_label) arrays, filtering alive rays."""
 
 
     if "lost_ray_flag" in df.columns:
         df = df.loc[df["lost_ray_flag"] == 0]
 
+    weights = _beam_weights(df, weight_by_intensity=weight_by_intensity)
+
     if kind == "div":
         x = df["dX"].to_numpy(dtype=float) * 1e6
         y = df["dY"].to_numpy(dtype=float) * 1e6
-        return x, y, r"$x'$ [$\mu$rad]", r"$y'$ [$\mu$rad]"
+        return x, y, weights, r"$x'$ [$\mu$rad]", r"$y'$ [$\mu$rad]"
 
     X0 = df["X"].to_numpy(dtype=float)
     Y0 = df["Y"].to_numpy(dtype=float)
@@ -707,7 +968,7 @@ def _prep_beam_xy(
             Xp, Yp = _propagate_xy(X0, Y0, dX, dY, float(z_offset))
         else:
             Xp, Yp = X0, Y0
-        return Xp * 1e6, Yp * 1e6, r"$x$ [$\mu$m]", r"$y$ [$\mu$m]"
+        return Xp * 1e6, Yp * 1e6, weights, r"$x$ [$\mu$m]", r"$y$ [$\mu$m]"
 
     if kind == "ps":
         if direction not in {"x", "y"}:
@@ -720,13 +981,63 @@ def _prep_beam_xy(
             _, Yp = _propagate_xy(X0, Y0, dX, dY, float(z_offset)) if z_offset != 0.0 else (X0, Y0)
             pos = Yp * 1e6
             ang = dY * 1e6
-        return pos, ang, (rf"${direction}$ [$\mu$m]"), (rf"${direction}'$ [$\mu$rad]")
+        return pos, ang, weights, (rf"${direction}$ [$\mu$m]"), (rf"${direction}'$ [$\mu$rad]")
 
     raise ValueError("kind must be one of {'size','div','ps'}.")
 
 # ---------------------------------------------------------------------------
 # utilities
 # ---------------------------------------------------------------------------
+
+def _beam_weights(df: pd.DataFrame, *, weight_by_intensity: bool = True) -> np.ndarray:
+    """
+    Return per-ray plotting weights.
+
+    If requested and available, the standardized ``intensity`` column is used.
+    Otherwise, unit weights are returned, preserving the old ray-count behavior.
+    """
+    if weight_by_intensity and "intensity" in df.columns:
+        weight = pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
+        std_weight = np.nanstd(weight)
+        mean_weight = np.nanmean(weight)
+        if np.abs(std_weight/mean_weight) >= 1e-6:
+            max_weight = np.percentile(weight, 99.99)
+            min_weight = np.percentile(weight, 00.01)
+            weight = (weight-min_weight)/(max_weight-min_weight)
+            weight = np.clip(weight, 0, 1)
+        else:
+            weight = np.ones(len(df), dtype=float)
+        return weight
+
+    return np.ones(len(df), dtype=float)
+
+def _sanitize_weights(weights: Optional[np.ndarray], shape: Tuple[int, ...]) -> np.ndarray:
+    """
+    Return weights with the requested shape.
+
+    ``None`` is interpreted as unit weights. Shape mismatches are explicit errors
+    because otherwise weighted histograms would silently misrepresent the beam.
+    """
+    if weights is None:
+        return np.ones(shape, dtype=float)
+
+    w = np.asarray(weights, dtype=float)
+    if w.shape != shape:
+        raise ValueError("weights must have the same shape as the plotted data")
+
+    return w
+
+def _weight_axis_label(weights: np.ndarray) -> str:
+    """
+    Return the histogram/count label corresponding to the supplied weights.
+    """
+    w = np.asarray(weights, dtype=float)
+    finite = w[np.isfinite(w)]
+
+    if finite.size == 0 or np.allclose(finite, 1.0):
+        return "[rays]"
+
+    return "[weighted rays]"
 
 def _resolve_mode(mode: ModeT) -> Literal["scatter", "hist2d"]:
     """Normalize plotting mode/aliases and fallback to 'hist2d' with a warning."""
@@ -757,6 +1068,37 @@ def _resolve_range(arr: np.ndarray, xr: RangeT) -> Tuple[float, float]:
     span = hi - lo
     pad = 0.02 * span
     return (lo - pad, hi + pad)
+
+def _is_polychromatic(df: pd.DataFrame, *, rtol: float = 1e-12) -> bool:
+    """Return True when finite alive-ray energies are not effectively constant."""
+    if "energy" not in df.columns:
+        return False
+
+    if "lost_ray_flag" in df.columns:
+        df = df.loc[df["lost_ray_flag"] == 0]
+
+    e = pd.to_numeric(df["energy"], errors="coerce").to_numpy(dtype=float)
+    e = e[np.isfinite(e)]
+
+    if e.size < 2:
+        return False
+
+    return not np.allclose(e, e[0], rtol=rtol, atol=0.0)
+
+def _auto_bins_from_trimmed_weights(weights: np.ndarray) -> int:
+    """Return sqrt(N) bins after trimming weights to the 5–95 percentile interval."""
+    w = np.asarray(weights, dtype=float)
+    w = w[np.isfinite(w)]
+
+    if w.size == 0:
+        return 1
+
+    lo = np.percentile(w, 5)
+    hi = np.percentile(w, 95)
+
+    w = w[(w >= lo) & (w <= hi)]
+
+    return max(1, int(np.sqrt(w.size)))
 
 def _auto_bins(
     arrx: np.ndarray,
@@ -803,10 +1145,9 @@ def _color_palette(color: Optional[int]) -> Union[Tuple[float, float, float], Co
     if color == 3: return cm.turbo
     if color == 4: return cm.magma
     if color == 5: return cm.terrain
-    # unknown: default to viridis as a safe colormap
     return cm.viridis
 
-def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
+def _overlay_envelope_on_hist(ax, data, rng, nbins, *, weights=None, horizontal=False,
                               method="edgeworth", color="darkred"):
     """Overlay a moment-matched PDF envelope onto a 1D histogram drawn in counts.
 
@@ -814,34 +1155,32 @@ def _overlay_envelope_on_hist(ax, data, rng, nbins, *, horizontal=False,
     so the curve sits in 'counts' space.
     """
     d = np.asarray(data, dtype=float)
-    d = d[np.isfinite(d)]
+    w = _sanitize_weights(weights, d.shape)
+
+    valid = np.isfinite(d) & np.isfinite(w) & (w > 0.0)
+    d = d[valid]
+    w = w[valid]
     if d.size < 2:
         return
 
-    # moments
-    mu, sig, skew, kurt = stats.calc_moments_from_particle_distribution(d)  # (mu,sigma,gamma1,gamma2_excess)
+    mu, sig, skew, kurt = stats.calc_moments_from_particle_distribution(d, weights=w)
     if not (np.isfinite(mu) and np.isfinite(sig) and sig > 0):
         return
 
-    # axis to evaluate the envelope
     xmin, xmax = rng
-    # be generous: mu+-6sigma but clipped to plotting range, and dense for a smooth curve
     lo = max(xmin, mu - 6*sig)
     hi = min(xmax, mu + 6*sig)
     axis = np.linspace(lo, hi, 1024)
 
-    # envelope (PDF) on that axis
     env = stats.calc_envelope_from_moments(
         mean=mu, std=sig, skewness=skew, kurtosis_excess=kurt,
         axis=axis, method=method, clip_negative=True
     )["envelope"]
 
-    # scale to histogram counts: counts \approx N * PDF * bin_width
-    N = d.size
+    total_weight = float(np.sum(w))
     bin_width = (xmax - xmin) / max(2, int(nbins))
-    counts_curve = N * env * bin_width
+    counts_curve = total_weight * env * bin_width
 
-    # plot
     if horizontal:
         ax.plot(counts_curve, axis, color=color, linewidth=0.5, alpha=1)
     else:
@@ -872,3 +1211,81 @@ def _edges_from_span(lo: float, hi: float, *, bin_width: Optional[Number], bins:
     if bins is None:
         bins = 200
     return np.linspace(lo, hi, int(bins)+1)
+
+def _resolve_scatter_weight_mode(
+    mode: ScatterWeightMode,
+    weights: np.ndarray,
+) -> Literal["none", "resample", "color", "alpha", "threshold"]:
+    """Resolve scatter weighting mode, with auto preserving legacy behavior for unit weights."""
+    if not isinstance(mode, str):
+        warnings.warn(f"scatter_weight_mode {mode!r} not recognized. Falling back to 'auto'.")
+        mode = "auto"
+
+    m = mode.strip().lower()
+
+    valid_modes = {"auto", "none", "resample", "color", "alpha", "threshold"}
+    if m not in valid_modes:
+        warnings.warn(f"scatter_weight_mode {mode!r} not recognized. Falling back to 'auto'.")
+        m = "auto"
+
+    if m != "auto":
+        return m
+
+    w = np.asarray(weights, dtype=float)
+    finite = w[np.isfinite(w)]
+
+    if finite.size == 0 or np.allclose(finite, 1.0):
+        return "none"
+
+    return "resample"
+
+def _scatter_arrays_from_weights(
+    *,
+    x: np.ndarray,
+    y: np.ndarray,
+    weights: np.ndarray,
+    mode: Literal["none", "resample", "color", "alpha", "threshold"],
+    sample_size: Optional[int],
+    seed: Optional[int],
+    threshold: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return scatter x/y/weights according to the requested visual weighting policy."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    w = np.asarray(weights, dtype=float)
+
+    finite_xy = np.isfinite(x) & np.isfinite(y)
+
+    if mode == "none":
+        valid = finite_xy
+        return x[valid], y[valid], np.ones(np.count_nonzero(valid), dtype=float)
+
+    valid = finite_xy & np.isfinite(w) & (w > 0.0)
+
+    if mode == "threshold":
+        valid &= w > float(threshold)
+
+    xs = x[valid]
+    ys = y[valid]
+    ws = w[valid]
+
+    if xs.size == 0:
+        return xs, ys, ws
+
+    ws = np.clip(ws, 0.0, 1.0)
+
+    if mode != "resample":
+        return xs, ys, ws
+
+    total = np.sum(ws)
+    if not np.isfinite(total) or total <= 0.0:
+        return np.array([]), np.array([]), np.array([])
+
+    n = int(sample_size) if sample_size is not None else xs.size
+    if n <= 0:
+        return np.array([]), np.array([]), np.array([])
+
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(xs.size, size=n, replace=True, p=ws / total)
+
+    return xs[idx], ys[idx], ws[idx]
