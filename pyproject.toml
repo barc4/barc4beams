@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "barc4beams"
-version = "2026.05.04"
+version = "2026.05.04b"
 description = "A Python project for: standardization, statistics, and plotting ray-traced photon beams (PyOptiX, SHADOW3/4)."
 readme = "README.md"
 license = "CECILL-2.1"
