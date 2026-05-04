@@ -151,20 +151,21 @@ def beam_from_wavefront(
     Build a standard beam by sampling a spatial wavefront map (SI units only).
 
     The ray positions (X, Y) are sampled from the wavefront intensity map.
-    The local ray angles (dX, dY) are obtained from the phase gradient of the
-    complex wavefront:
+    The local ray angles (dX, dY) are obtained from the phase gradient:
+
         dX = (1 / k) * dphi/dx
         dY = (1 / k) * dphi/dy
+
     with k = 2*pi / wavelength.
 
     Parameters
     ----------
     wavefront : dict
         Flat dict with keys:
-            - "intensity": 2D array I[y, x] (already per pixel)
-            - "phase": 2D array of wavefront unwrapped phase in radians
-            - "x_axis": 1D array of x in meters (strictly monotonic)
-            - "y_axis": 1D array of y in meters (strictly monotonic)
+            - "intensity": 2D array I[y, x].
+            - "phase": 2D array of unwrapped phase in radians.
+            - "x_axis": 1D array of x in meters.
+            - "y_axis": 1D array of y in meters.
 
     n_rays : int
         Number of rays to sample.
@@ -175,16 +176,15 @@ def beam_from_wavefront(
     jitter : bool, optional
         Sub-pixel jitter for the sampled (X, Y) coordinates.
     threshold : float or None, optional
-        Relative cutoff in [0, 1] applied to the intensity map used for
-        sampling and for masking unreliable low-intensity regions in the
-        complex-field gradient estimation.
+        Relative cutoff in [0, 1]. Pixels below threshold * max(intensity)
+        are excluded both from position sampling and from phase-gradient support.
     seed : int | None, optional
         RNG seed for reproducibility. Use an int for deterministic draws;
         use None for non-deterministic sampling.
     z0 : float, default 0.0
         Source plane position assigned to all rays (Z=z0, dZ=0).
     polarization_degree : float, default 1.0
-        Value in [0,1] is the s-polarization fraction: Is = pdeg, Ip = 1-pdeg
+        Value in [0, 1] is the s-polarization fraction: Is = pdeg, Ip = 1-pdeg.
 
     Returns
     -------
@@ -193,14 +193,16 @@ def beam_from_wavefront(
 
     Notes
     -----
-    - This function samples ray positions from a spatial intensity map and
-      assigns local propagation angles from the phase gradient - assumption from speckle 
-      tracking experiments as described in 
-      Celestre *et al.*, *J. Synchrotron Rad.* **32**, 180-199 (2025).
+    This function samples ray positions from a spatial intensity map and
+    assigns local propagation angles from the phase gradient.
 
+    Low-intensity or invalid pixels are masked internally before gradient
+    evaluation. This avoids differentiating noisy finite phase values outside
+    the useful wavefront support.
     """
     if (energy is None) == (wavelength is None):
         raise ValueError("Provide exactly one of (energy, wavelength).")
+
     if energy is not None:
         energy = float(energy)
         wavelength = float(misc.energy_wavelength(energy, "eV"))
@@ -208,54 +210,35 @@ def beam_from_wavefront(
         wavelength = float(wavelength)
         energy = float(misc.energy_wavelength(wavelength, "m"))
 
-    for k in ("intensity", "x_axis", "y_axis"):
-        if k not in wavefront:
-            raise KeyError(f"wavefront missing key: {k!r}")
+    intensity, phase, x_axis, y_axis = _validate_wavefront_map(wavefront)
 
-    intensity = np.asarray(wavefront["intensity"], dtype=float)
-    intensity = np.nan_to_num(intensity, nan=0.0, posinf=0.0, neginf=0.0)
-
-    x_axis = np.asarray(wavefront["x_axis"], dtype=float)
-    y_axis = np.asarray(wavefront["y_axis"], dtype=float)
-
-    if intensity.ndim != 2:
-        raise ValueError("wavefront['intensity'] must be 2D (I[y, x]).")
-    if x_axis.ndim != 1 or y_axis.ndim != 1:
-        raise ValueError("wavefront['x_axis'] and wavefront['y_axis'] must be 1D arrays.")
-    if x_axis.size != intensity.shape[1] or y_axis.size != intensity.shape[0]:
-        raise ValueError("Axis lengths must match wavefront intensity shape (ny, nx).")
-    if not (np.all(np.diff(x_axis) > 0) or np.all(np.diff(x_axis) < 0)):
-        raise ValueError("wavefront['x_axis'] must be strictly monotonic.")
-    if not (np.all(np.diff(y_axis) > 0) or np.all(np.diff(y_axis) < 0)):
-        raise ValueError("wavefront['y_axis'] must be strictly monotonic.")
-
-    phase = np.asarray(wavefront["phase"], dtype=float)
-    if phase.shape != intensity.shape:
-        raise ValueError("'phase' must have the same shape as 'intensity'.")
-
-    valid = np.isfinite(intensity) & (intensity > 0.0)
+    valid = (
+        np.isfinite(intensity)
+        & (intensity > 0.0)
+        & np.isfinite(phase)
+    )
 
     if threshold is not None:
         thr = float(threshold)
         if thr < 0.0 or thr > 1.0:
             raise ValueError("`threshold` must be in [0, 1] (relative to max intensity).")
+
         maxI = np.max(intensity)
         if not np.isfinite(maxI) or maxI <= 0.0:
             raise ValueError("Intensity max is non-finite or non-positive; cannot apply threshold.")
+
         valid &= intensity >= thr * maxI
 
     if not np.any(valid):
         raise ValueError("No valid wavefront support remains after masking.")
 
-    phase = np.asarray(wavefront["phase"], dtype=float)
-    
-    dU_dy, dU_dx = np.gradient(phase, y_axis, x_axis)
+    intensity_sample = np.where(valid, intensity, 0.0)
+    phase_masked = np.where(valid, phase, np.nan)
 
-    grad_x = np.full(intensity.shape, np.nan, dtype=float)
-    grad_y = np.full(intensity.shape, np.nan, dtype=float)
+    dphi_dy, dphi_dx = np.gradient(phase_masked, y_axis, x_axis)
 
-    grad_x[valid] = dU_dx[valid]
-    grad_y[valid] = dU_dy[valid]
+    grad_x = np.where(valid, dphi_dx, np.nan)
+    grad_y = np.where(valid, dphi_dy, np.nan)
 
     k = 2.0 * np.pi / wavelength
     slope_x = grad_x / k
@@ -288,15 +271,17 @@ def beam_from_wavefront(
         n_need = n_rays - n_kept
         n_try = max(batch_min, int(np.ceil(1.5 * n_need)))
 
-        batch_seed = None if seed is None else int(rng.integers(0, np.iinfo(np.int64).max))
+        batch_seed = None if seed is None else int(
+            rng.integers(0, np.iinfo(np.int64).max)
+        )
 
         X_try, Y_try = _sample_from_intensity(
-            intensity,
+            intensity_sample,
             x_axis,
             y_axis,
             n_try,
             jitter=jitter,
-            threshold=threshold,
+            threshold=None,
             seed=batch_seed,
         )
 
@@ -304,6 +289,7 @@ def beam_from_wavefront(
         dY_try = _interp2d_regular(x_axis, y_axis, slope_y, X_try, Y_try)
 
         good = np.isfinite(dX_try) & np.isfinite(dY_try)
+
         if not np.any(good):
             continue
 
@@ -332,8 +318,12 @@ def beam_from_wavefront(
     df = pd.DataFrame(
         {
             "energy": E,
-            "X": X, "Y": Y, "Z": Z,
-            "dX": dX, "dY": dY, "dZ": dZ,
+            "X": X,
+            "Y": Y,
+            "Z": Z,
+            "dX": dX,
+            "dY": dY,
+            "dZ": dZ,
             "wavelength": W,
             "intensity": I_ray,
             "intensity_s-pol": Is,
@@ -345,6 +335,145 @@ def beam_from_wavefront(
     schema.validate_beam(df)
     return df
 
+def apply_wavefront(
+    *,
+    standard_beam: pd.DataFrame,
+    wavefront: dict,
+    energy: float | None = None,
+    wavelength: float | None = None,
+    threshold: float | None = None,
+) -> pd.DataFrame:
+    """
+    Apply a spatial wavefront map to an existing standard beam.
+
+    The input beam is copied. Ray positions are preserved. The wavefront
+    intensity is interpolated at each ray position and applied as a
+    multiplicative transmission factor. The wavefront phase gradient is
+    interpolated at each ray position and applied as an angular kick:
+
+        dX_out = dX_in + (1 / k) * dphi/dx
+        dY_out = dY_in + (1 / k) * dphi/dy
+
+    with k = 2*pi / wavelength.
+
+    Rays outside the wavefront grid, rays landing on zero/invalid
+    transmission, and rays landing where the phase-gradient support is invalid
+    are marked as lost and assigned zero intensity.
+
+    Parameters
+    ----------
+    standard_beam : pandas.DataFrame
+        Standard beam DataFrame.
+    wavefront : dict
+        Flat dict with keys:
+            - "intensity": 2D array I[y, x].
+            - "phase": 2D array of unwrapped phase in radians.
+            - "x_axis": 1D array of x in meters.
+            - "y_axis": 1D array of y in meters.
+    energy, wavelength : float, optional
+        Exactly one must be provided. The other is computed using
+        misc.energy_wavelength(...). If 'energy' is given, wavelength is
+        computed in meters; if 'wavelength' is given, energy is computed in eV.
+    threshold : float or None, optional
+        Relative cutoff in [0, 1]. Pixels below threshold * max(intensity)
+        are treated as invalid support.
+
+    Returns
+    -------
+    pandas.DataFrame
+        New standard beam DataFrame with updated intensity, slopes, and
+        lost-ray flags.
+
+    Raises
+    ------
+    ValueError
+        If the input beam or wavefront is invalid.
+    """
+    schema.validate_beam(standard_beam)
+
+    if (energy is None) == (wavelength is None):
+        raise ValueError("Provide exactly one of (energy, wavelength).")
+
+    if energy is not None:
+        energy = float(energy)
+        wavelength = float(misc.energy_wavelength(energy, "eV"))
+    else:
+        wavelength = float(wavelength)
+        energy = float(misc.energy_wavelength(wavelength, "m"))
+
+    intensity, phase, x_axis, y_axis = _validate_wavefront_map(wavefront)
+
+    valid = (
+        np.isfinite(intensity)
+        & (intensity > 0.0)
+        & np.isfinite(phase)
+    )
+
+    if threshold is not None:
+        thr = float(threshold)
+        if thr < 0.0 or thr > 1.0:
+            raise ValueError("`threshold` must be in [0, 1] (relative to max intensity).")
+
+        maxI = np.max(intensity)
+        if not np.isfinite(maxI) or maxI <= 0.0:
+            raise ValueError("Intensity max is non-finite or non-positive; cannot apply threshold.")
+
+        valid &= intensity >= thr * maxI
+
+    if not np.any(valid):
+        raise ValueError("No valid wavefront support remains after masking.")
+
+    maxI = np.max(np.where(valid, intensity, 0.0))
+    if not np.isfinite(maxI) or maxI <= 0.0:
+        raise ValueError("No positive wavefront intensity remains after masking.")
+
+    transmission_map = np.where(valid, intensity / maxI, 0.0)
+    phase_masked = np.where(valid, phase, np.nan)
+
+    dphi_dy, dphi_dx = np.gradient(phase_masked, y_axis, x_axis)
+
+    k = 2.0 * np.pi / wavelength
+    slope_x_map = np.where(valid, dphi_dx / k, np.nan)
+    slope_y_map = np.where(valid, dphi_dy / k, np.nan)
+
+    beam = standard_beam.copy(deep=True)
+
+    xs = beam["X"].to_numpy(dtype=float)
+    ys = beam["Y"].to_numpy(dtype=float)
+
+    transmission = _interp2d_regular(x_axis, y_axis, transmission_map, xs, ys)
+    delta_dX = _interp2d_regular(x_axis, y_axis, slope_x_map, xs, ys)
+    delta_dY = _interp2d_regular(x_axis, y_axis, slope_y_map, xs, ys)
+
+    inside = (
+        (xs >= min(x_axis[0], x_axis[-1]))
+        & (xs <= max(x_axis[0], x_axis[-1]))
+        & (ys >= min(y_axis[0], y_axis[-1]))
+        & (ys <= max(y_axis[0], y_axis[-1]))
+    )
+
+    alive = (
+        inside
+        & np.isfinite(transmission)
+        & (transmission > 0.0)
+        & np.isfinite(delta_dX)
+        & np.isfinite(delta_dY)
+        & (beam["lost_ray_flag"].to_numpy(dtype=np.uint8) == 0)
+    )
+
+    beam.loc[alive, "dX"] = beam.loc[alive, "dX"].to_numpy(dtype=float) + delta_dX[alive]
+    beam.loc[alive, "dY"] = beam.loc[alive, "dY"].to_numpy(dtype=float) + delta_dY[alive]
+
+    for key in ("intensity", "intensity_s-pol", "intensity_p-pol"):
+        values = beam[key].to_numpy(dtype=float)
+        values[alive] *= transmission[alive]
+        values[~alive] = 0.0
+        beam[key] = values
+
+    beam.loc[~alive, "lost_ray_flag"] = 1
+
+    schema.validate_beam(beam)
+    return beam
 
 # ---------------------------------------------------------------------------
 # internal helpers
@@ -442,6 +571,58 @@ def _sample_from_intensity(intensity, x_axis, y_axis, n, jitter=True, threshold=
         ys = rng.uniform(y_edges[iy], y_edges[iy + 1])
 
     return xs, ys
+
+
+def _validate_wavefront_map(wavefront: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Validate and normalize a flat wavefront dictionary.
+
+    Parameters
+    ----------
+    wavefront : dict
+        Flat dict with keys:
+            - "intensity": 2D array I[y, x].
+            - "phase": 2D array of unwrapped phase in radians.
+            - "x_axis": 1D array of x in meters.
+            - "y_axis": 1D array of y in meters.
+
+    Returns
+    -------
+    intensity, phase, x_axis, y_axis : tuple of numpy.ndarray
+        Validated arrays with float dtype.
+
+    Raises
+    ------
+    KeyError
+        If a required key is missing.
+    ValueError
+        If array dimensions, shapes, or axes are invalid.
+    """
+    for key in ("intensity", "phase", "x_axis", "y_axis"):
+        if key not in wavefront:
+            raise KeyError(f"wavefront missing key: {key!r}")
+
+    intensity = np.asarray(wavefront["intensity"], dtype=float)
+    phase = np.asarray(wavefront["phase"], dtype=float)
+    x_axis = np.asarray(wavefront["x_axis"], dtype=float)
+    y_axis = np.asarray(wavefront["y_axis"], dtype=float)
+
+    if intensity.ndim != 2:
+        raise ValueError("wavefront['intensity'] must be 2D (I[y, x]).")
+    if phase.shape != intensity.shape:
+        raise ValueError("wavefront['phase'] must have the same shape as 'intensity'.")
+    if x_axis.ndim != 1 or y_axis.ndim != 1:
+        raise ValueError("wavefront['x_axis'] and wavefront['y_axis'] must be 1D arrays.")
+    if x_axis.size != intensity.shape[1] or y_axis.size != intensity.shape[0]:
+        raise ValueError("Axis lengths must match wavefront intensity shape (ny, nx).")
+    if not (np.all(np.diff(x_axis) > 0) or np.all(np.diff(x_axis) < 0)):
+        raise ValueError("wavefront['x_axis'] must be strictly monotonic.")
+    if not (np.all(np.diff(y_axis) > 0) or np.all(np.diff(y_axis) < 0)):
+        raise ValueError("wavefront['y_axis'] must be strictly monotonic.")
+
+    intensity = np.nan_to_num(intensity, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return intensity, phase, x_axis, y_axis
 
 
 def _interp2d_regular(
