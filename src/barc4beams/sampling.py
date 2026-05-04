@@ -452,20 +452,22 @@ def apply_wavefront(
         & (ys <= max(y_axis[0], y_axis[-1]))
     )
 
+    lost = beam["lost_ray_flag"].to_numpy(dtype=np.uint8).copy()
+
     alive = (
         inside
         & np.isfinite(transmission)
         & (transmission > 0.0)
         & np.isfinite(delta_dX)
         & np.isfinite(delta_dY)
-        & (beam["lost_ray_flag"].to_numpy(dtype=np.uint8) == 0)
+        & (lost == 0)
     )
 
     beam.loc[alive, "dX"] = beam.loc[alive, "dX"].to_numpy(dtype=float) + delta_dX[alive]
     beam.loc[alive, "dY"] = beam.loc[alive, "dY"].to_numpy(dtype=float) + delta_dY[alive]
 
     for key in ("intensity", "intensity_s-pol", "intensity_p-pol"):
-        values = beam[key].to_numpy(dtype=float)
+        values = beam[key].to_numpy(dtype=float).copy()
         values[alive] *= transmission[alive]
         values[~alive] = 0.0
         beam[key] = values

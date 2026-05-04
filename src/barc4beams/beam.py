@@ -215,6 +215,33 @@ class Beam:
             finish=finish,
         )
 
+    def apply_wavefront(
+        self,
+        *,
+        wavefront: dict,
+        energy: float | None = None,
+        wavelength: float | None = None,
+        threshold: float | None = None,
+        verbose: bool = False,
+    ) -> "Beam":
+        """
+        Returns a new Beam instance with updated intensity, slopes, and lost-ray
+        flags.
+        """
+        df2 = sampling.apply_wavefront(
+            standard_beam=self.df,
+            wavefront=wavefront,
+            energy=energy,
+            wavelength=wavelength,
+            threshold=threshold,
+        )
+        out = Beam.from_df(df2)
+
+        if verbose:
+            stats.get_statistics(df2, verbose=True)
+
+        return out
+
     # ------------------------------------------------------------------
     # plotting
     # ------------------------------------------------------------------
