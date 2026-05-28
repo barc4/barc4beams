@@ -242,6 +242,38 @@ class Beam:
 
         return out
 
+    def apply_transmission_element(
+        self,
+        *,
+        thickness: dict,
+        energy: float | Sequence[float],
+        n: float | complex | Sequence[float | complex] | None = None,
+        delta: float | Sequence[float] | None = None,
+        beta: float | Sequence[float] | None = None,
+        attenuation_length: float | Sequence[float] | None = None,
+        verbose: bool = False,
+    ) -> "Beam":
+        """
+        Return a new Beam after applying a thin transmission element.
+
+        See `sampling.apply_transmission_element`.
+        """
+        df2 = sampling.apply_transmission_element(
+            standard_beam=self.df,
+            thickness=thickness,
+            energy=energy,
+            n=n,
+            delta=delta,
+            beta=beta,
+            attenuation_length=attenuation_length,
+        )
+        out = Beam.from_df(df2)
+
+        if verbose:
+            stats.get_statistics(df2, verbose=True)
+
+        return out
+
     # ------------------------------------------------------------------
     # plotting
     # ------------------------------------------------------------------

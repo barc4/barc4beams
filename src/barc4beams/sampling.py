@@ -477,6 +477,147 @@ def apply_wavefront(
     schema.validate_beam(beam)
     return beam
 
+
+def apply_transmission_element(
+    *,
+    standard_beam: pd.DataFrame,
+    thickness: dict,
+    energy: float | np.ndarray,
+    n: float | complex | np.ndarray | None = None,
+    delta: float | np.ndarray | None = None,
+    beta: float | np.ndarray | None = None,
+    attenuation_length: float | np.ndarray | None = None,
+) -> pd.DataFrame:
+    """
+    Apply a thin transmission element to an existing standard beam.
+
+    The input beam is copied. Ray positions are preserved. The element
+    thickness is interpolated at each ray position and used to attenuate the
+    ray intensity according to Beer-Lambert absorption:
+
+        I_out = I_in * exp(-2 * k * beta * t)
+
+    The local thickness gradients are interpolated at each ray position and
+    applied as refractive angular kicks:
+
+        dX_out = dX_in - delta * dt/dx
+        dY_out = dY_in - delta * dt/dy
+
+    where k = 2*pi / wavelength and n = 1 - delta + 1j*beta.
+
+    Rays outside the thickness grid, rays landing on invalid
+    thickness support, and rays landing where thickness gradients are invalid
+    are marked as lost and assigned zero intensity. 
+
+    Parameters
+    ----------
+    standard_beam : pandas.DataFrame
+        Standard beam DataFrame.
+    thickness : dict
+        Flat dict with keys:
+            - "profile": 2D array t[y, x] in meters.
+            - "x_axis": 1D array of x in meters.
+            - "y_axis": 1D array of y in meters.
+    energy : float or array_like
+        Photon energy grid in eV associated with the optical constants. If
+        optical constants are scalar, ``energy`` may be scalar. If optical
+        constants are arrays, ``energy`` must be a 1D array with matching
+        length and must cover the full energy range of the input beam.
+    n : float, complex or array_like, optional
+        Complex refractive index, using the convention n = 1 - delta + 1j*beta.
+        May be scalar or tabulated against ``energy``.
+    delta, beta : float or array_like, optional
+        Refractive index decrement and absorption index. Both must be provided
+        together, unless ``attenuation_length`` is provided instead of ``beta``.
+    attenuation_length : float or array_like, optional
+        Attenuation length in meters. May be provided together with ``delta``
+        instead of ``beta``. Internally converted using
+        beta = wavelength / (4*pi*attenuation_length).
+
+    Returns
+    -------
+    pandas.DataFrame
+        New standard beam DataFrame with updated intensity, slopes, and
+        lost-ray flags.
+
+    Raises
+    ------
+    ValueError
+        If the input beam, thickness map, or optical constants are invalid.
+    """
+    schema.validate_beam(standard_beam)
+
+    profile, x_axis, y_axis = _validate_thickness_map(thickness)
+    energy_grid, delta_grid, beta_grid = _normalize_optical_constants(
+        energy=energy,
+        n=n,
+        delta=delta,
+        beta=beta,
+        attenuation_length=attenuation_length,
+    )
+
+    beam = standard_beam.copy(deep=True)
+
+    xs = beam["X"].to_numpy(dtype=float)
+    ys = beam["Y"].to_numpy(dtype=float)
+    ray_energy = beam["energy"].to_numpy(dtype=float)
+    wavelength = beam["wavelength"].to_numpy(dtype=float)
+
+    _check_energy_coverage(ray_energy, energy_grid)
+
+    valid = np.isfinite(profile) & (profile >= 0.0)
+    if not np.any(valid):
+        raise ValueError("No valid thickness support remains after masking.")
+
+    thickness_map = np.where(valid, profile, np.nan)
+    dt_dy, dt_dx = np.gradient(thickness_map, y_axis, x_axis)
+
+    thickness_ray = _interp2d_regular(x_axis, y_axis, thickness_map, xs, ys)
+    dt_dx_ray = _interp2d_regular(x_axis, y_axis, dt_dx, xs, ys)
+    dt_dy_ray = _interp2d_regular(x_axis, y_axis, dt_dy, xs, ys)
+
+    delta_ray = _interp1d_strict(energy_grid, delta_grid, ray_energy)
+    beta_ray = _interp1d_strict(energy_grid, beta_grid, ray_energy)
+
+    k_ray = 2.0 * np.pi / wavelength
+    transmission = np.exp(-2.0 * k_ray * beta_ray * thickness_ray)
+
+    delta_dX = -delta_ray * dt_dx_ray
+    delta_dY = -delta_ray * dt_dy_ray
+
+    inside = (
+        (xs >= min(x_axis[0], x_axis[-1]))
+        & (xs <= max(x_axis[0], x_axis[-1]))
+        & (ys >= min(y_axis[0], y_axis[-1]))
+        & (ys <= max(y_axis[0], y_axis[-1]))
+    )
+
+    lost = beam["lost_ray_flag"].to_numpy(dtype=np.uint8).copy()
+
+    alive = (
+        inside
+        & np.isfinite(thickness_ray)
+        & np.isfinite(transmission)
+        & (transmission > 0.0)
+        & np.isfinite(delta_dX)
+        & np.isfinite(delta_dY)
+        & (lost == 0)
+    )
+
+    beam.loc[alive, "dX"] = beam.loc[alive, "dX"].to_numpy(dtype=float) + delta_dX[alive]
+    beam.loc[alive, "dY"] = beam.loc[alive, "dY"].to_numpy(dtype=float) + delta_dY[alive]
+
+    for key in ("intensity", "intensity_s-pol", "intensity_p-pol"):
+        values = beam[key].to_numpy(dtype=float).copy()
+        values[alive] *= transmission[alive]
+        values[~alive] = 0.0
+        beam[key] = values
+
+    beam.loc[~alive, "lost_ray_flag"] = 1
+
+    schema.validate_beam(beam)
+    return beam
+
 # ---------------------------------------------------------------------------
 # internal helpers
 # ---------------------------------------------------------------------------
@@ -626,6 +767,163 @@ def _validate_wavefront_map(wavefront: dict) -> tuple[np.ndarray, np.ndarray, np
 
     return intensity, phase, x_axis, y_axis
 
+
+
+def _validate_thickness_map(thickness: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Validate and normalize a flat thickness dictionary.
+
+    Parameters
+    ----------
+    thickness : dict
+        Flat dict with keys:
+            - "profile": 2D array t[y, x] in meters.
+            - "x_axis": 1D array of x in meters.
+            - "y_axis": 1D array of y in meters.
+
+    Returns
+    -------
+    profile, x_axis, y_axis : tuple of numpy.ndarray
+        Validated arrays with float dtype.
+
+    Raises
+    ------
+    KeyError
+        If a required key is missing.
+    ValueError
+        If array dimensions, shapes, axes, or thickness values are invalid.
+    """
+    for key in ("profile", "x_axis", "y_axis"):
+        if key not in thickness:
+            raise KeyError(f"thickness missing key: {key!r}")
+
+    profile = np.asarray(thickness["profile"], dtype=float)
+    x_axis = np.asarray(thickness["x_axis"], dtype=float)
+    y_axis = np.asarray(thickness["y_axis"], dtype=float)
+
+    if profile.ndim != 2:
+        raise ValueError("thickness['profile'] must be 2D (t[y, x]).")
+    if x_axis.ndim != 1 or y_axis.ndim != 1:
+        raise ValueError("thickness['x_axis'] and thickness['y_axis'] must be 1D arrays.")
+    if x_axis.size != profile.shape[1] or y_axis.size != profile.shape[0]:
+        raise ValueError("Axis lengths must match thickness profile shape (ny, nx).")
+    if not (np.all(np.diff(x_axis) > 0) or np.all(np.diff(x_axis) < 0)):
+        raise ValueError("thickness['x_axis'] must be strictly monotonic.")
+    if not (np.all(np.diff(y_axis) > 0) or np.all(np.diff(y_axis) < 0)):
+        raise ValueError("thickness['y_axis'] must be strictly monotonic.")
+    if np.any(profile < 0.0):
+        raise ValueError("thickness['profile'] must be non-negative where finite.")
+
+    return profile, x_axis, y_axis
+
+
+def _normalize_optical_constants(
+    *,
+    energy: float | np.ndarray,
+    n: float | complex | np.ndarray | None,
+    delta: float | np.ndarray | None,
+    beta: float | np.ndarray | None,
+    attenuation_length: float | np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Normalize accepted optical-constant inputs to energy, delta, and beta grids.
+    """
+    has_n = n is not None
+    has_delta_beta = delta is not None and beta is not None and attenuation_length is None
+    has_delta_att = delta is not None and beta is None and attenuation_length is not None
+
+    if sum((has_n, has_delta_beta, has_delta_att)) != 1:
+        raise ValueError(
+            "Provide exactly one optical-constant mode: `n`, `delta`+`beta`, "
+            "or `delta`+`attenuation_length`."
+        )
+
+    energy_grid = np.atleast_1d(np.asarray(energy, dtype=float))
+    if energy_grid.ndim != 1:
+        raise ValueError("`energy` must be scalar or 1D array_like.")
+    if np.any(~np.isfinite(energy_grid)) or np.any(energy_grid <= 0.0):
+        raise ValueError("`energy` must contain finite positive values in eV.")
+    if energy_grid.size > 1 and not (
+        np.all(np.diff(energy_grid) > 0.0) or np.all(np.diff(energy_grid) < 0.0)
+    ):
+        raise ValueError("`energy` must be strictly monotonic when tabulated.")
+
+    if has_n:
+        n_grid = np.atleast_1d(np.asarray(n, dtype=complex))
+        _check_grid_length("n", n_grid, energy_grid)
+        delta_grid = 1.0 - np.real(n_grid)
+        beta_grid = np.imag(n_grid)
+    elif has_delta_beta:
+        delta_grid = np.atleast_1d(np.asarray(delta, dtype=float))
+        beta_grid = np.atleast_1d(np.asarray(beta, dtype=float))
+        _check_grid_length("delta", delta_grid, energy_grid)
+        _check_grid_length("beta", beta_grid, energy_grid)
+    else:
+        delta_grid = np.atleast_1d(np.asarray(delta, dtype=float))
+        attenuation_grid = np.atleast_1d(np.asarray(attenuation_length, dtype=float))
+        _check_grid_length("delta", delta_grid, energy_grid)
+        _check_grid_length("attenuation_length", attenuation_grid, energy_grid)
+        if np.any(~np.isfinite(attenuation_grid)) or np.any(attenuation_grid <= 0.0):
+            raise ValueError("`attenuation_length` must contain finite positive values in meters.")
+        wavelength_grid = np.asarray(misc.energy_wavelength(energy_grid, "eV"), dtype=float)
+        beta_grid = wavelength_grid / (4.0 * np.pi * attenuation_grid)
+
+    delta_grid = np.asarray(delta_grid, dtype=float)
+    beta_grid = np.asarray(beta_grid, dtype=float)
+
+    if np.any(~np.isfinite(delta_grid)):
+        raise ValueError("`delta` values must be finite.")
+    if np.any(~np.isfinite(beta_grid)) or np.any(beta_grid < 0.0):
+        raise ValueError("`beta` values must be finite and non-negative.")
+
+    if energy_grid[0] > energy_grid[-1]:
+        energy_grid = energy_grid[::-1]
+        delta_grid = delta_grid[::-1]
+        beta_grid = beta_grid[::-1]
+
+    return energy_grid, delta_grid, beta_grid
+
+
+def _check_grid_length(name: str, values: np.ndarray, energy: np.ndarray) -> None:
+    """
+    Check that a scalar or tabulated optical constant is compatible with energy.
+    """
+    if values.ndim != 1:
+        raise ValueError(f"`{name}` must be scalar or 1D array_like.")
+    if values.size != energy.size:
+        raise ValueError(f"`{name}` and `energy` must have the same length.")
+
+
+def _check_energy_coverage(ray_energy: np.ndarray, energy_grid: np.ndarray) -> None:
+    """
+    Ensure the tabulated optical constants cover the full beam energy range.
+    """
+    emin = float(np.nanmin(ray_energy))
+    emax = float(np.nanmax(ray_energy))
+    gmin = float(energy_grid[0])
+    gmax = float(energy_grid[-1])
+
+    if emin < gmin or emax > gmax:
+        raise ValueError(
+            "Optical-constant energy grid does not cover the beam energy range: "
+            f"beam=[{emin:g}, {emax:g}] eV, grid=[{gmin:g}, {gmax:g}] eV."
+        )
+
+
+def _interp1d_strict(x_axis: np.ndarray, values: np.ndarray, xs: np.ndarray) -> np.ndarray:
+    """
+    One-dimensional interpolation without extrapolation.
+    """
+    x_axis = np.asarray(x_axis, dtype=float)
+    values = np.asarray(values, dtype=float)
+    xs = np.asarray(xs, dtype=float)
+
+    if x_axis.size == 1:
+        return np.full(xs.shape, values[0], dtype=float)
+
+    out = np.interp(xs, x_axis, values)
+    out[(xs < x_axis[0]) | (xs > x_axis[-1])] = np.nan
+    return out
 
 def _interp2d_regular(
     x_axis: np.ndarray,

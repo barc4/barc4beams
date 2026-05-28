@@ -235,6 +235,7 @@ def get_statistics(
                 f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' urad')} "
                 f"(FWHM: {fmt_with_unc(stats_div['fwhm'][0], stats_div['fwhm'][1], scale=1e6, unit=' urad')})"
             )
+            print(f">> Centroid: {fmt_with_unc(stats_axis['mean'][0], stats_axis['mean'][1])}")
             print(f">> Skewness: {fmt_with_unc(stats_axis['skewness'][0], stats_axis['skewness'][1])}")
             print(f">> Kurtosis: {fmt_with_unc(stats_axis['kurtosis'][0], stats_axis['kurtosis'][1])}")
 
