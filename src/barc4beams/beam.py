@@ -281,7 +281,7 @@ class Beam:
     def plot_beam(
         self,
         *,
-        mode: str = "scatter",
+        mode: str = "hist",
         aspect_ratio: bool = True,
         color: int = 1,
         x_range: tuple[float | None, float | None] | None = None,
@@ -330,7 +330,7 @@ class Beam:
     def plot_divergence(
         self,
         *,
-        mode: str = "scatter",
+        mode: str = "hist",
         aspect_ratio: bool = False,
         color: int = 2,
         x_range: tuple[float | None, float | None] | None = None,
@@ -378,7 +378,7 @@ class Beam:
         self,
         *,
         direction: str = "both",
-        mode: str = "scatter",
+        mode: str = "hist",
         aspect_ratio: bool = False,
         color: int = 3,
         x_range: tuple[float | None, float | None] | None = None,
@@ -482,7 +482,7 @@ class Beam:
     def plot_energy_vs_intensity(
         self,
         *,
-        mode: str = "scatter",
+        mode: str = "hist",
         aspect_ratio: bool = False,
         color: int | None = 3,
         x_range: tuple[float | None, float | None] | None = None,

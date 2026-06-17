@@ -227,15 +227,15 @@ def get_statistics(
 
             print(
                 f">> RMS beam size: "
-                f"{fmt_with_unc(stats_axis['std'][0], stats_axis['std'][1], scale=1e6, unit=' um')} "
-                f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' um')})"
+                f"{fmt_with_unc(stats_axis['std'][0], stats_axis['std'][1], scale=1e6, unit=' µm')} "
+                f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' µm')})"
             )
             print(
                 f">> Divergence: "
-                f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' urad')} "
-                f"(FWHM: {fmt_with_unc(stats_div['fwhm'][0], stats_div['fwhm'][1], scale=1e6, unit=' urad')})"
+                f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' µrad')} "
+                f"(FWHM: {fmt_with_unc(stats_div['fwhm'][0], stats_div['fwhm'][1], scale=1e6, unit=' µrad')})"
             )
-            print(f">> Centroid: {fmt_with_unc(stats_axis['mean'][0], stats_axis['mean'][1])}")
+            print(f">> Centroid: {fmt_with_unc(stats_axis['mean'][0], stats_axis['mean'][1], scale=1e6, unit=' µm')}")
             print(f">> Skewness: {fmt_with_unc(stats_axis['skewness'][0], stats_axis['skewness'][1])}")
             print(f">> Kurtosis: {fmt_with_unc(stats_axis['kurtosis'][0], stats_axis['kurtosis'][1])}")
 

@@ -883,8 +883,6 @@ def _common_xy_plot(
             )
 
         else:
-            # "none", "resample", and "threshold":
-            # keep the legacy KDE-density coloring unless color is 0/None.
             if color is None or color == 0:
                 im = ax_image.scatter(
                     xs, ys,
@@ -915,11 +913,20 @@ def _common_xy_plot(
 
     elif mode == 'hist2d':
         nbx, nby = nb_of_bins if isinstance(nb_of_bins, (tuple, list)) else (nb_of_bins, nb_of_bins)
-        im = ax_image.hist2d(
+
+        H, xedges, yedges = np.histogram2d(
             x_weighted,
             y_weighted,
             bins=[nbx, nby],
+            range=[x_range, y_range],
             weights=w_weighted,
+        )
+
+        im = ax_image.pcolormesh(
+            xedges,
+            yedges,
+            H.T,
+            shading="flat",
             cmap=_color_palette(color or 2),
         )
     else:
