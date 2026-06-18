@@ -8,6 +8,7 @@ barc4beams — analysis and plotting for ray-traced photon beams.
 from ._version import __version__
 from .adapters import merge_standard_beams, to_standard_beam
 from .beam import Beam, BeamEnsemble
+from .compare import compare_beams
 from .io import read_beam, read_json_stats, save_beam, save_json_stats
 from .propagation import caustic, propagate
 from .sampling import beam_from_intensity, beam_from_wavefront, apply_wavefront
@@ -31,6 +32,8 @@ __all__ = [
     # beam
     "Beam",
     "BeamEnsemble",
+    # compare
+    "compare_beams",
     # io
     "read_beam",
     "read_json_stats",
