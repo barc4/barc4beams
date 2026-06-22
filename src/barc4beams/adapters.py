@@ -63,6 +63,7 @@ def to_standard_beam(beam, code: Optional[str] = None) -> pd.DataFrame:
         df = _from_shadow3(beam)
     elif code in {"shadow4", "s4", "shadow"}:
         df = _from_shadow4(beam)
+        df = _append_shadow4_cleaned_lost_rays(df, beam)
     else:
         raise ValueError(f"Unsupported code: {code}")
 
@@ -171,6 +172,43 @@ def _from_shadow4(beam) -> pd.DataFrame:
     cols = [26, 1, 3, 2, 4, 6, 5, 19, 23, 24, 25, 10]
     return _from_shadow(beam, cols, "get_columns")
 
+def _append_shadow4_cleaned_lost_rays(df: pd.DataFrame, beam) -> pd.DataFrame:
+    """Append placeholder lost rays removed by S4Beam.clean_lost_rays()."""
+    is_cleaned = getattr(beam, "is_cleaned", None)
+    if is_cleaned is None or not is_cleaned():
+        return df
+
+    stored = getattr(beam, "Nstored", None)
+    if stored is None:
+        rays = getattr(beam, "rays", None)
+        if rays is None:
+            return df
+        stored = rays.shape[0]
+
+    missing = int(beam.get_number_of_rays(nolost=0)) - int(stored)
+    if missing <= 0:
+        return df
+
+    lost_rays = pd.DataFrame(
+        {
+            "energy": np.full(missing, df["energy"].mean(), dtype=np.float64),
+            "X": np.zeros(missing, dtype=np.float64),
+            "Y": np.zeros(missing, dtype=np.float64),
+            "Z": np.full(missing, df["Z"].mean(), dtype=np.float64),
+            "dX": np.zeros(missing, dtype=np.float64),
+            "dY": np.zeros(missing, dtype=np.float64),
+            "dZ": np.zeros(missing, dtype=np.float64),
+            "wavelength": np.full(missing, df["wavelength"].mean(), dtype=np.float64),
+            "intensity": np.zeros(missing, dtype=np.float64),
+            "intensity_s-pol": np.zeros(missing, dtype=np.float64),
+            "intensity_p-pol": np.zeros(missing, dtype=np.float64),
+            "lost_ray_flag": np.ones(missing, dtype=np.uint8),
+            "id": "shadow4_cleaned_lost_ray",
+        }
+    )
+
+    return _enforce_beam_dtypes(pd.concat([df, lost_rays], ignore_index=True, sort=False))
+
 def _from_shadow(beam, cols, getter_name: str) -> pd.DataFrame:
     """
     Generic SHADOW adapter (used by S3/S4 wrappers).
@@ -213,7 +251,7 @@ def _from_shadow(beam, cols, getter_name: str) -> pd.DataFrame:
     df["wavelength"] *=  1e-10
 
     raw = pd.to_numeric(df["lost_ray_flag"], errors="coerce")
-    df["lost_ray_flag"] = (raw == -1).astype(np.uint8)
+    df["lost_ray_flag"] = (raw < 0).astype(np.uint8)
 
     lost = df["lost_ray_flag"] == 1
     for col in ("intensity", "intensity_s-pol", "intensity_p-pol"):
