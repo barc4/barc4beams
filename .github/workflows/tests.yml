@@ -7,6 +7,14 @@ on:
     branches: [ main ]
 
 jobs:
+  python310-unsupported:
+    name: tests (3.10)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Python 3.10 is no longer supported
+        run: echo "barc4beams now requires Python >=3.11; this check remains temporarily for branch protection."
+
   tests:
     runs-on: ubuntu-latest
 
