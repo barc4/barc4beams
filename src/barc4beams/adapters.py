@@ -251,7 +251,7 @@ def _from_shadow(beam, cols, getter_name: str) -> pd.DataFrame:
     df["wavelength"] *=  1e-10
 
     raw = pd.to_numeric(df["lost_ray_flag"], errors="coerce")
-    df["lost_ray_flag"] = (raw == -1).astype(np.uint8)
+    df["lost_ray_flag"] = (raw < 0).astype(np.uint8)
 
     lost = df["lost_ray_flag"] == 1
     for col in ("intensity", "intensity_s-pol", "intensity_p-pol"):

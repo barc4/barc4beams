@@ -52,7 +52,7 @@ class FakeShadow3Beam:
             4: np.array([0.1, 0.2]),
             5: np.array([0.4, 0.5]),
             6: np.array([0.7, 0.8]),
-            10: np.array([1.0, -1.0]),
+            10: np.array([1.0, -2.0]),
             11: np.array([100.0, 200.0]),
             19: np.array([2.0, 4.0]),
             23: np.array([1.5, 0.7]),
