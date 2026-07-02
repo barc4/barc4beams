@@ -18,7 +18,7 @@ from typing import Any, Dict, Literal, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 
-from . import adapters, io, propagation, sampling, schema, stats, viz
+from . import adapters, io, propagation, sampling, schema, stats, viz, wave
 
 
 class Beam:
@@ -174,6 +174,23 @@ class Beam:
         See `stats.get_statistics`.
         """
         return stats.get_statistics(self.df, verbose=verbose)
+
+    def wave_metrics(
+        self,
+        *,
+        max_focal_distance: float = 1000.0,
+        verbose: bool = False,
+    ) -> dict:
+        """
+        Estimate Gaussian-equivalent wave-optics metrics.
+
+        See `wave.get_wave_metrics`.
+        """
+        return wave.get_wave_metrics(
+            self.df,
+            max_focal_distance=max_focal_distance,
+            verbose=verbose,
+        )
 
     # ------------------------------------------------------------------
     # free-space propagation
@@ -696,6 +713,23 @@ class BeamEnsemble:
         See `stats.get_statistics`.
         """
         return stats.get_statistics(list(self._runs), verbose=verbose)
+
+    def wave_metrics(
+        self,
+        *,
+        max_focal_distance: float = 1000.0,
+        verbose: bool = False,
+    ) -> dict:
+        """
+        Estimate ensemble Gaussian-equivalent wave-optics metrics.
+
+        See `wave.get_wave_metrics`.
+        """
+        return wave.get_wave_metrics(
+            list(self._runs),
+            max_focal_distance=max_focal_distance,
+            verbose=verbose,
+        )
 
     def merge(self) -> Beam:
         """

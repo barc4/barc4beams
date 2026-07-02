@@ -23,6 +23,7 @@ from .viz import (
     plot_intensity,
     plot_phase_space,
 )
+from .wave import get_wave_metrics
 
 __all__ = [
     "__version__",
@@ -59,4 +60,6 @@ __all__ = [
     "plot_energy_vs_intensity",
     "plot_intensity",
     "plot_phase_space",
+    # wave
+    "get_wave_metrics",
 ]
