@@ -158,6 +158,11 @@ def _per_run_axis_metrics(
     depth_of_focus = 2.0 * np.pi * gaussian_waist**2 / wavelength
     gaussian_waist_diameter = 2.0 * gaussian_waist
     convolved = np.sqrt(beam_size**2 + gaussian_waist_diameter**2)
+    geometric_depth_of_focus = _geometric_depth_of_focus(
+        beam_size,
+        image_stats[dcol]["std"][0],
+        convolved,
+    )
 
     return {
         "is_finite_focus": True,
@@ -166,6 +171,7 @@ def _per_run_axis_metrics(
         "gaussian_waist": float(gaussian_waist),
         "depth_of_focus": float(depth_of_focus),
         "convolved_beam_size": float(convolved),
+        "geometric_depth_of_focus": float(geometric_depth_of_focus),
     }
 
 
@@ -177,7 +183,29 @@ def _nan_axis_metrics(*, is_finite_focus: bool) -> dict:
         "gaussian_waist": np.nan,
         "depth_of_focus": np.nan,
         "convolved_beam_size": np.nan,
+        "geometric_depth_of_focus": np.nan,
     }
+
+
+def _geometric_depth_of_focus(
+    beam_size: float,
+    divergence_rms: float,
+    convolved_beam_size: float,
+) -> float:
+    if (
+        not np.isfinite(beam_size)
+        or not np.isfinite(divergence_rms)
+        or not np.isfinite(convolved_beam_size)
+        or divergence_rms <= 0
+    ):
+        return np.nan
+
+    target = np.sqrt(2.0) * convolved_beam_size
+    delta = target**2 - beam_size**2
+    if delta <= 0 or not np.isfinite(delta):
+        return np.nan
+
+    return float(2.0 * np.sqrt(delta) / divergence_rms)
 
 
 def _aggregate_axis_metrics(dicts: Sequence[dict]) -> dict:
@@ -187,6 +215,7 @@ def _aggregate_axis_metrics(dicts: Sequence[dict]) -> dict:
         "gaussian_waist",
         "depth_of_focus",
         "convolved_beam_size",
+        "geometric_depth_of_focus",
     )
     out = {key: _aggregate_values([d[key] for d in dicts]) for key in keys}
     out["is_finite_focus"] = all(bool(d["is_finite_focus"]) for d in dicts)
@@ -227,6 +256,12 @@ def _print_wave_summary(result: dict) -> None:
             n_reps=n_reps,
             scale=1e3,
         )
+        geometric_dof = _format_wave_with_unc(
+            *data["geometric_depth_of_focus"],
+            kind="beam_mm",
+            n_reps=n_reps,
+            scale=1e3,
+        )
         convolved = _format_wave_with_unc(
             *data["convolved_beam_size"],
             kind="beam_um",
@@ -238,6 +273,7 @@ def _print_wave_summary(result: dict) -> None:
         print(f">> NA: {na}")
         print(f">> Gaussian waist diameter: {waist}")
         print(f">> Depth of focus: {dof}")
+        print(f">> Geometric depth of focus: {geometric_dof}")
         print(f">> Convolved beam size: {convolved}")
 
 

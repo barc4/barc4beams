@@ -41,6 +41,7 @@ def test_beam_wave_metrics_uses_image_plane_divergence():
     na = np.sin(theta)
     waist = wavelength / (np.pi * na)
     dof = 2.0 * np.pi * waist**2 / wavelength
+    geometric_dof = 2.0 * np.sqrt(2.0) * (2.0 * waist) / 5e-4
 
     assert metrics["meta"]["method"] == "gaussian_equivalent"
     assert metrics["meta"]["wavelength"] == [wavelength, 0.0]
@@ -50,6 +51,7 @@ def test_beam_wave_metrics_uses_image_plane_divergence():
     assert np.isclose(metrics["X"]["gaussian_waist"][0], waist)
     assert np.isclose(metrics["X"]["depth_of_focus"][0], dof)
     assert np.isclose(metrics["X"]["convolved_beam_size"][0], 2.0 * waist)
+    assert np.isclose(metrics["X"]["geometric_depth_of_focus"][0], geometric_dof)
     assert np.isclose(metrics["Y"]["theta"][0], theta)
 
 
@@ -101,6 +103,7 @@ def test_wave_metrics_verbose_summary_format(capsys):
     assert " µm" in out
     assert ">> Depth of focus:" in out
     assert " mm" in out
+    assert ">> Geometric depth of focus:" in out
     assert ">> Convolved beam size:" in out
     assert "> percentile:" not in out
     assert "> wavelength:" not in out
