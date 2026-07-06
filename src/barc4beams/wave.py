@@ -272,6 +272,7 @@ def _print_wave_summary(result: dict) -> None:
         print(f"\n------------------ {direction}-plane:")
         print(f">> NA: {na}")
         print(f">> Gaussian waist diameter: {waist}")
+        print(f">> Convolved beam size: {convolved}")
         print(f">> Depth of focus: {dof}")
         print(f">> Geometric depth of focus: {geometric_dof}")
         print(f">> Convolved beam size: {convolved}")
