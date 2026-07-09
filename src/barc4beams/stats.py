@@ -166,78 +166,7 @@ def get_statistics(
         ]
 
     if verbose:
-
-        def fmt_with_unc(val, unc, scale=1.0, unit="") -> str:
-            """
-            Format value +- uncertainty with 1 significant figure for the uncertainty.
-
-            Scales by `scale` and appends `unit`.
-            """
-            if not np.isfinite(val) or not np.isfinite(unc):
-                return f"{val:.6g}{unit}"
-
-            if unc == 0:
-                return f"{val * scale:.6g}{unit}"
-
-            v, u = val * scale, unc * scale
-
-            exp = int(np.floor(np.log10(abs(u)))) if u != 0 else 0
-            dec = -exp
-            u_rounded = round(u, -exp)
-            v_rounded = round(v, -exp)
-
-            return f"{v_rounded:.{max(dec, 0)}f} +- {u_rounded:.{max(dec, 0)}f}{unit}"
-
-        t_mean, t_std = result["meta"]["transmission"]
-
-        print(f"\n\n{n_reps} x {n_rays} rays ")
-        print(
-            f"> good rays: "
-            f"{fmt_with_unc(good_mean / n_rays, good_std / n_rays, scale=100, unit='%')}"
-        )
-        print(
-            f"> intensity transmission: "
-            f"{fmt_with_unc(t_mean / 100, t_std / 100, scale=100, unit='%')}\n"
-        )
-
-        if "energy" in result:
-            e = result["energy"]
-            if e["std"][0] < 1e-6:
-                print(f"Beam energy: {e['mean'][0]:.6g} eV (monochromatic)")
-            else:
-                print(
-                    f"Beam energy: {e['mean'][0]:.6g} +- {e['std'][0]:.3g} eV "
-                    f"(FWHM: {e['fwhm'][0]:.3g} eV)"
-                )
-
-        for axis in ("X", "Y"):
-            if axis not in result:
-                continue
-
-            direction = "horizontal" if axis == "X" else "vertical"
-            print(f"\n------------------ {direction}-plane:")
-
-            key_f = "fx" if axis == "X" else "fy"
-            if key_f in result:
-                f_mean, f_std = result[key_f]
-                print(f"> Beam focusing at {fmt_with_unc(f_mean, f_std, unit=' m')}")
-
-            stats_axis = result[axis]
-            stats_div = result["dX" if axis == "X" else "dY"]
-
-            print(
-                f">> RMS beam size: "
-                f"{fmt_with_unc(stats_axis['std'][0], stats_axis['std'][1], scale=1e6, unit=' µm')} "
-                f"(FWHM: {fmt_with_unc(stats_axis['fwhm'][0], stats_axis['fwhm'][1], scale=1e6, unit=' µm')})"
-            )
-            print(
-                f">> Divergence: "
-                f"{fmt_with_unc(stats_div['std'][0], stats_div['std'][1], scale=1e6, unit=' µrad')} "
-                f"(FWHM: {fmt_with_unc(stats_div['fwhm'][0], stats_div['fwhm'][1], scale=1e6, unit=' µrad')})"
-            )
-            print(f">> Centroid: {fmt_with_unc(stats_axis['mean'][0], stats_axis['mean'][1], scale=1e6, unit=' µm')}")
-            print(f">> Skewness: {fmt_with_unc(stats_axis['skewness'][0], stats_axis['skewness'][1])}")
-            print(f">> Kurtosis: {fmt_with_unc(stats_axis['kurtosis'][0], stats_axis['kurtosis'][1])}")
+        _print_statistics_summary(result)
 
     return result
 
@@ -849,6 +778,271 @@ def _weighted_fl(df: pd.DataFrame, col: str) -> float:
         )
 
     return np.nan
+
+
+def _print_statistics_summary(result: dict) -> None:
+    """
+    Print a human-readable statistics summary with stable display units.
+    """
+    meta = result["meta"]
+    n_reps = meta["n_repetitions"]
+    n_rays = meta["n_rays"]
+
+    good_mean, good_std = meta["good_rays"]
+    t_mean, t_std = meta["transmission"]
+    good_pct = 100.0 * good_mean / n_rays if n_rays > 0 else np.nan
+    good_pct_std = 100.0 * good_std / n_rays if n_rays > 0 else np.nan
+
+    print(f"\n\n{n_reps} x {n_rays} rays ")
+    print(
+        f"> good rays: "
+        f"{_format_with_unc(good_pct, good_pct_std, 'percent', n_reps)}"
+    )
+    print(
+        f"> intensity transmission: "
+        f"{_format_with_unc(t_mean, t_std, 'percent', n_reps)}\n"
+    )
+
+    if "energy" in result:
+        e = result["energy"]
+        energy = _format_with_unc(e["mean"][0], e["mean"][1], "energy", n_reps)
+        if e["std"][0] < 1e-6:
+            print(f"Beam energy: {energy} (monochromatic)")
+        else:
+            spread = _format_with_unc(
+                e["std"][0],
+                e["std"][1],
+                "energy_spread",
+                n_reps,
+            )
+            fwhm = _format_with_unc(
+                e["fwhm"][0],
+                e["fwhm"][1],
+                "energy_spread",
+                n_reps,
+            )
+            print(f"Beam energy: {energy} (RMS: {spread}, FWHM: {fwhm})")
+
+    for axis in ("X", "Y"):
+        if axis not in result:
+            continue
+
+        direction = "horizontal" if axis == "X" else "vertical"
+        print(f"\n------------------ {direction}-plane:")
+
+        key_f = "fx" if axis == "X" else "fy"
+        if key_f in result:
+            f_mean, f_std = result[key_f]
+            print(f"> Beam focusing at {_format_with_unc(f_mean, f_std, 'focal', n_reps)}")
+
+        stats_axis = result[axis]
+        stats_div = result["dX" if axis == "X" else "dY"]
+
+        size = _format_with_unc(
+            stats_axis["std"][0],
+            stats_axis["std"][1],
+            "beam_um",
+            n_reps,
+            scale=1e6,
+        )
+        size_fwhm = _format_with_unc(
+            stats_axis["fwhm"][0],
+            stats_axis["fwhm"][1],
+            "beam_um",
+            n_reps,
+            scale=1e6,
+        )
+        divergence = _format_with_unc(
+            stats_div["std"][0],
+            stats_div["std"][1],
+            "divergence_urad",
+            n_reps,
+            scale=1e6,
+        )
+        divergence_fwhm = _format_with_unc(
+            stats_div["fwhm"][0],
+            stats_div["fwhm"][1],
+            "divergence_urad",
+            n_reps,
+            scale=1e6,
+        )
+        centroid = _format_with_unc(
+            stats_axis["mean"][0],
+            stats_axis["mean"][1],
+            "beam_um",
+            n_reps,
+            scale=1e6,
+        )
+
+        print(f">> RMS beam size: {size} (FWHM: {size_fwhm})")
+        print(f">> Divergence: {divergence} (FWHM: {divergence_fwhm})")
+        print(f">> Centroid: {centroid}")
+        print(
+            f">> Skewness: "
+            f"{_format_with_unc(stats_axis['skewness'][0], stats_axis['skewness'][1], 'shape', n_reps)}"
+        )
+        print(
+            f">> Kurtosis: "
+            f"{_format_with_unc(stats_axis['kurtosis'][0], stats_axis['kurtosis'][1], 'shape', n_reps)}"
+        )
+
+
+def _format_with_unc(
+    val: float,
+    unc: float,
+    kind: str,
+    n_reps: int,
+    *,
+    scale: float = 1.0,
+) -> str:
+    """
+    Format a scalar or scalar +- repetition uncertainty.
+    """
+    v = val * scale
+    u = unc * scale
+    unit = _format_unit(kind)
+
+    if not np.isfinite(v):
+        return f"{v:.6g}{unit}"
+
+    if n_reps <= 1 or not np.isfinite(u) or u == 0:
+        return f"{_format_scalar(v, kind)}{unit}"
+
+    decimals = _uncertainty_decimals(u, kind)
+    if decimals is None:
+        return f"{_format_scalar(v, kind)} +- {_format_scalar(u, kind)}{unit}"
+
+    return f"{v:.{decimals}f} +- {u:.{decimals}f}{unit}"
+
+
+def _format_scalar(val: float, kind: str) -> str:
+    """
+    Format one already-scaled value according to its physical quantity.
+    """
+    if not np.isfinite(val):
+        return f"{val:.6g}"
+
+    if kind in {"beam_um", "divergence_urad"}:
+        return _format_beam_scale(val)
+
+    if kind == "focal":
+        return _format_focal_m(val)
+
+    if kind == "percent":
+        return _format_percent(val)
+
+    if kind == "shape":
+        return f"{val:.3f}"
+
+    if kind == "energy":
+        return f"{val:.6g}"
+
+    if kind == "energy_spread":
+        return _format_energy_spread(val)
+
+    return f"{val:.6g}"
+
+
+def _format_beam_scale(val: float) -> str:
+    aval = abs(val)
+    if aval >= 10000:
+        return f"{val:.4e}"
+    if aval < 1:
+        return f"{val:.3f}"
+    if aval < 10:
+        return f"{val:.2f}"
+    if aval < 100:
+        return f"{val:.1f}"
+    return f"{val:.0f}"
+
+
+def _format_focal_m(val: float) -> str:
+    aval = abs(val)
+    if aval < 10e-9:
+        return "0"
+    if aval < 100e-6:
+        return f"{val:.4e}"
+    if aval < 100e-3:
+        return f"{val:.6f}"
+    if aval < 1:
+        return f"{val:.4f}"
+    if aval < 100:
+        return f"{val:.3f}"
+    if aval < 1000:
+        return f"{val:.2f}"
+    if aval < 10000:
+        return f"{val:.1f}"
+    return f"{val:.4e}"
+
+
+def _format_percent(val: float) -> str:
+    aval = abs(val)
+    if aval < 1:
+        return f"{val:.3f}"
+    if aval < 10:
+        return f"{val:.2f}"
+    return f"{val:.1f}"
+
+
+def _format_energy_spread(val: float) -> str:
+    aval = abs(val)
+    if aval < 1:
+        return f"{val:.3f}"
+    if aval < 10:
+        return f"{val:.2f}"
+    if aval < 100:
+        return f"{val:.1f}"
+    return f"{val:.0f}"
+
+
+def _uncertainty_decimals(unc: float, kind: str) -> Optional[int]:
+    """
+    Pick shared decimal places for value +- uncertainty.
+    """
+    if not np.isfinite(unc) or unc == 0:
+        return None
+
+    if kind in {"beam_um", "divergence_urad"}:
+        return min(max(_significant_unc_decimals(unc), 0), 3)
+
+    if kind == "percent":
+        return min(max(_significant_unc_decimals(unc), 0), 3)
+
+    if kind == "shape":
+        return min(max(_significant_unc_decimals(unc), 0), 4)
+
+    if kind == "energy_spread":
+        return min(max(_significant_unc_decimals(unc), 0), 3)
+
+    return None
+
+
+def _significant_unc_decimals(unc: float) -> int:
+    """
+    Decimal places needed to keep one significant digit of an uncertainty.
+    """
+    if unc == 0 or not np.isfinite(unc):
+        return 0
+
+    exp = int(np.floor(np.log10(abs(unc))))
+    return max(-exp, 0)
+
+
+def _format_unit(kind: str) -> str:
+    if kind == "beam_um":
+        return " µm"
+    if kind == "divergence_urad":
+        return " µrad"
+    if kind == "focal":
+        return " m"
+    if kind == "percent":
+        return "%"
+    if kind == "energy":
+        return " eV"
+    if kind == "energy_spread":
+        return " eV"
+    return ""
+
 
 def _per_run_weighted_stats(df: pd.DataFrame, col: str) -> dict:
     """
