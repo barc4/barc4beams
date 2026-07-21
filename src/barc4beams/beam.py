@@ -547,7 +547,7 @@ class Beam:
         which: Literal["x", "y", "both"] = "both",
         aspect_ratio: bool = False,
         color: int | None = 5,
-        z_range: tuple[float | None, float | None] | None = None,
+        z_range: tuple[float, float] = (-0.5, 0.5),
         xy_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int | None, int] | None = None,
         bin_width: float | None = None,
@@ -557,8 +557,6 @@ class Beam:
         k: float = 1.0,
         top_stat: str | None = None,
         n_points: int = 501,
-        start: float = -0.5,
-        finish: float = 0.5,
         plot: bool = True,
     ):
         """
@@ -566,8 +564,8 @@ class Beam:
         """
         ca = self.caustic(
             n_points=n_points,
-            start=start,
-            finish=finish,
+            start=z_range[0],
+            finish=z_range[1],
         )
 
         return viz.plot_caustic(

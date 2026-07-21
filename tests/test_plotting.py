@@ -33,3 +33,30 @@ def test_plots_run():
     beam.plot_phase_space(plot=False)
 
     plt.close("all")
+
+
+def test_plot_caustic_uses_z_range(monkeypatch):
+    beam = _make_standard_beam()
+    captured = {}
+
+    def fake_caustic(*, n_points, start, finish):
+        captured.update(n_points=n_points, start=start, finish=finish)
+        return {"caustic": True}
+
+    def fake_plot_caustic(*, caustic, z_range, **kwargs):
+        captured.update(caustic=caustic, plot_z_range=z_range)
+        return "plot result"
+
+    monkeypatch.setattr(beam, "caustic", fake_caustic)
+    monkeypatch.setattr(b4b.beam.viz, "plot_caustic", fake_plot_caustic)
+
+    result = beam.plot_caustic(z_range=(-1.25, 2.5), n_points=17, plot=False)
+
+    assert result == "plot result"
+    assert captured == {
+        "n_points": 17,
+        "start": -1.25,
+        "finish": 2.5,
+        "caustic": {"caustic": True},
+        "plot_z_range": (-1.25, 2.5),
+    }
