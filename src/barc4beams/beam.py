@@ -295,12 +295,47 @@ class Beam:
     # plotting
     # ------------------------------------------------------------------
 
+    def plot_rays(
+        self,
+        *,
+        color="black",
+        marker=".",
+        intensity_threshold: float | None = None,
+        marker_size: float = 2.5,
+        aspect_ratio: bool = True,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
+        z_offset: float = 0.0,
+        dpi: int = 100,
+        path: str | None = None,
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
+        """Plot alive rays above an absolute intensity threshold."""
+        return viz.plot_rays(
+            df=self.df,
+            color=color,
+            marker=marker,
+            intensity_threshold=intensity_threshold,
+            marker_size=marker_size,
+            aspect_ratio=aspect_ratio,
+            x_range=x_range,
+            y_range=y_range,
+            z_offset=z_offset,
+            dpi=dpi,
+            path=path,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
+
     def plot_beam(
         self,
         *,
         mode: str = "hist",
         aspect_ratio: bool = True,
-        color: int = 1,
+        cmap="viridis",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: Optional[Union[int, Tuple[int, int]]] = None,
@@ -310,12 +345,9 @@ class Beam:
         path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = False,
-        envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
         z_offset: float = 0.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -325,7 +357,7 @@ class Beam:
             df=self.df,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -335,13 +367,10 @@ class Beam:
             path=path,
             showXhist=showXhist,
             showYhist=showYhist,
-            envelope=envelope,
-            envelope_method=envelope_method,
             apply_style=apply_style,
             k=k,
             plot=plot,
             z_offset=z_offset,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_divergence(
@@ -349,7 +378,7 @@ class Beam:
         *,
         mode: str = "hist",
         aspect_ratio: bool = False,
-        color: int = 2,
+        cmap="plasma",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int, int] | None = None,
@@ -359,11 +388,8 @@ class Beam:
         path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = False,
-        envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -373,7 +399,7 @@ class Beam:
             df=self.df,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -383,12 +409,9 @@ class Beam:
             path=path,
             showXhist=showXhist,
             showYhist=showYhist,
-            envelope=envelope,
-            envelope_method=envelope_method,
             apply_style=apply_style,
             k=k,
             plot=plot,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_phase_space(
@@ -397,7 +420,7 @@ class Beam:
         direction: str = "both",
         mode: str = "hist",
         aspect_ratio: bool = False,
-        color: int = 3,
+        cmap="turbo",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int, int] | None = None,
@@ -407,12 +430,9 @@ class Beam:
         path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope: bool = False,
-        envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
         z_offset: float = 0.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -423,7 +443,7 @@ class Beam:
             direction=direction,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -433,13 +453,10 @@ class Beam:
             path=path,
             showXhist=showXhist,
             showYhist=showYhist,
-            envelope=envelope,
-            envelope_method=envelope_method,
             apply_style=apply_style,
             k=k,
             plot=plot,
             z_offset=z_offset,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_energy(
@@ -501,7 +518,7 @@ class Beam:
         *,
         mode: str = "hist",
         aspect_ratio: bool = False,
-        color: int | None = 3,
+        cmap="turbo",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int, int] | None = None,
@@ -511,10 +528,8 @@ class Beam:
         path: str | None = None,
         showXhist: bool = True,
         showYhist: bool = True,
-        envelope_method: str = "edgeworth",
         apply_style: bool = True,
         k: float = 1.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -524,7 +539,7 @@ class Beam:
             df=self.df,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -534,11 +549,9 @@ class Beam:
             path=path,
             showXhist=showXhist,
             showYhist=showYhist,
-            envelope_method=envelope_method,
             apply_style=apply_style,
             k=k,
             plot=plot,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_caustic(
@@ -547,7 +560,7 @@ class Beam:
         which: Literal["x", "y", "both"] = "both",
         aspect_ratio: bool = False,
         color: int | None = 5,
-        z_range: tuple[float | None, float | None] | None = None,
+        z_range: tuple[float, float] = (-0.5, 0.5),
         xy_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int | None, int] | None = None,
         bin_width: float | None = None,
@@ -557,8 +570,6 @@ class Beam:
         k: float = 1.0,
         top_stat: str | None = None,
         n_points: int = 501,
-        start: float = -0.5,
-        finish: float = 0.5,
         plot: bool = True,
     ):
         """
@@ -566,8 +577,8 @@ class Beam:
         """
         ca = self.caustic(
             n_points=n_points,
-            start=start,
-            finish=finish,
+            start=z_range[0],
+            finish=z_range[1],
         )
 
         return viz.plot_caustic(

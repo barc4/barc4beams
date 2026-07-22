@@ -635,6 +635,20 @@ def _weighted_moments(
 
     return (mu, sigma, skew, kurt_excess)
 
+
+def _weighted_quantile(
+    values: np.ndarray,
+    weights: np.ndarray,
+    quantiles,
+) -> np.ndarray:
+    """Return linearly interpolated quantiles of a weighted sample."""
+    order = np.argsort(values)
+    x = np.asarray(values, dtype=float)[order]
+    w = np.asarray(weights, dtype=float)[order]
+    cumulative = (np.cumsum(w) - 0.5 * w) / np.sum(w)
+    return np.interp(quantiles, cumulative, x, left=x[0], right=x[-1])
+
+
 def _weighted_fwhm(
     profile: np.ndarray,
     weights: np.ndarray,
@@ -659,18 +673,37 @@ def _weighted_fwhm(
     if x.size < 2:
         return -1.0
 
+    histogram_range = None
     if bins is None:
-        q75, q25 = np.percentile(x, [75, 25])
+        weight_sum = float(np.sum(w))
+        effective_n = weight_sum**2 / float(np.sum(w**2))
+        q25, q75 = _weighted_quantile(x, w, [0.25, 0.75])
         iqr = q75 - q25
+
+        tail_probability = 0.5 / max(1.0, effective_n)
+        lo, hi = _weighted_quantile(
+            x,
+            w,
+            [tail_probability, 1.0 - tail_probability],
+        )
+        histogram_range = (float(lo), float(hi))
+        span = hi - lo
+
         if iqr > 0:
-            h = 2.0 * iqr / (x.size ** (1.0 / 3.0))
-            bins = max(2, int(np.ceil((x.max() - x.min()) / h))) if h > 0 else int(np.sqrt(x.size))
+            h = 2.0 * iqr / (effective_n ** (1.0 / 3.0))
+            bins = max(2, int(np.ceil(span / h))) if h > 0 and span > 0 else 2
         else:
-            bins = int(np.sqrt(x.size))
+            bins = max(2, int(np.sqrt(effective_n)))
 
     bins = max(2, int(bins))
 
-    counts, edges = np.histogram(x, bins=bins, weights=w, density=False)
+    counts, edges = np.histogram(
+        x,
+        bins=bins,
+        range=histogram_range,
+        weights=w,
+        density=False,
+    )
 
     if not np.any(np.isfinite(counts)) or counts.max() <= 0:
         return -1.0

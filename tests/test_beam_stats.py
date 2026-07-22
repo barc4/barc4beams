@@ -1,7 +1,11 @@
 import numpy as np
 import pandas as pd
 import barc4beams as b4b
-from barc4beams.stats import _format_scalar, _format_with_unc
+from barc4beams.stats import (
+    _format_scalar,
+    _format_with_unc,
+    calc_fwhm_from_particle_distribution,
+)
 
 
 def _make_standard_beam(
@@ -82,6 +86,22 @@ def test_stats_ignore_lost_and_zero_intensity_rows_for_weighted_observables():
     assert stats["Y"]["std"] == [2.0, 0.0]
     assert stats["energy"]["mean"] == [15.0, 0.0]
     assert stats["energy"]["std"] == [5.0, 0.0]
+
+
+def test_automatic_weighted_fwhm_ignores_negligible_intensity_outliers():
+    rng = np.random.default_rng(1234)
+    core = rng.normal(size=10_000)
+    baseline = calc_fwhm_from_particle_distribution(core, np.ones_like(core))
+
+    outliers = np.linspace(-1e6, 1e6, 100_000)
+    profile = np.concatenate([core, outliers])
+    weights = np.concatenate([
+        np.ones_like(core),
+        np.full_like(outliers, 1e-300),
+    ])
+    weighted = calc_fwhm_from_particle_distribution(profile, weights)
+
+    assert weighted == baseline
 
 
 def test_verbose_beam_scale_formatting_contract():
