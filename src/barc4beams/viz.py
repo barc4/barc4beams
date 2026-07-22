@@ -10,7 +10,7 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from itertools import cycle
-from typing import Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -20,7 +20,6 @@ from matplotlib import rcParamsDefault
 from matplotlib.colors import Colormap, to_rgba
 from scipy.stats import gaussian_kde, moment
 
-from . import stats
 from .propagation import _propagate_xy
 
 Number = Union[int, float]
@@ -127,8 +126,6 @@ def plot_beam(
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
-    envelope=False,
-    envelope_method="edgeworth",
     weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
@@ -140,8 +137,7 @@ def plot_beam(
     scatter_threshold: float = 0.0,
 ):
     """
-    Plot the spatial footprint of a standardized beam (X vs Y), with optional marginals
-    and moment-matched envelope overlays.
+    Plot the spatial footprint of a standardized beam (X vs Y), with optional marginals.
 
     Parameters
     ----------
@@ -167,10 +163,6 @@ def plot_beam(
         If provided, the figure is saved.
     showXhist, showYhist : bool, default True
         Whether to show X/Y marginals.
-    envelope : bool, default True
-        Overlay envelope curve on the 1D marginals using moments from the data.
-    envelope_method : {'edgeworth','pearson','maxent'}, default 'edgeworth'
-        Reconstruction method passed to `stats.calc_envelope_from_moments`.
     apply_style : bool, default True
         Call `start_plotting(k)` before plotting.
     k : float, default 1.0
@@ -198,7 +190,7 @@ def plot_beam(
     fig, axes = _common_xy_plot(
         x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
-        showXhist, showYhist, envelope, envelope_method,
+        showXhist, showYhist,
         scatter_weight_mode=scatter_weight_mode,
         scatter_sample_size=scatter_sample_size,
         scatter_seed=scatter_seed,
@@ -224,8 +216,6 @@ def plot_divergence(
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
-    envelope=False,
-    envelope_method="edgeworth",
     weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
@@ -237,7 +227,7 @@ def plot_divergence(
     scatter_threshold: float = 0.0,
 ):
     """
-    Plot the beam divergence (dX vs dY) in µrad with optional marginals and envelopes.
+    Plot the beam divergence (dX vs dY) in µrad with optional marginals.
     (See `plot_beam` for parameter semantics.)
 
     Returns
@@ -260,7 +250,7 @@ def plot_divergence(
     fig, axes = _common_xy_plot(
         x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
-        showXhist, showYhist, envelope, envelope_method,
+        showXhist, showYhist,
         scatter_weight_mode=scatter_weight_mode,
         scatter_sample_size=scatter_sample_size,
         scatter_seed=scatter_seed,
@@ -286,8 +276,6 @@ def plot_phase_space(
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
-    envelope=False,
-    envelope_method="edgeworth",
     weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
@@ -338,7 +326,7 @@ def plot_phase_space(
         return _common_xy_plot(
             x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
             x_range, y_range, bins_local, bin_width, bin_method, dpi, save_path,
-            showXhist, showYhist, envelope, envelope_method,
+            showXhist, showYhist,
             scatter_weight_mode=scatter_weight_mode,
             scatter_sample_size=scatter_sample_size,
             scatter_seed=scatter_seed,
@@ -674,7 +662,6 @@ def plot_energy_vs_intensity(
     path: Optional[str] = None,
     showXhist: bool = True,
     showYhist: bool = True,
-    envelope_method: str = "edgeworth",
     weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
@@ -684,7 +671,7 @@ def plot_energy_vs_intensity(
     scatter_seed: Optional[int] = 12345,
     scatter_threshold: float = 0.0,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
-    """2D plot with X=energy [eV], Y=Intensity [arb], with optional marginals/envelopes; never silently shows."""
+    """2D plot with X=energy [eV], Y=Intensity [arb], with optional marginals; never silently shows."""
     if apply_style:
         start_plotting(k)
 
@@ -713,8 +700,6 @@ def plot_energy_vs_intensity(
         path=path,
         showXhist=showXhist,
         showYhist=showYhist,
-        envelope=False,
-        envelope_method=envelope_method,
         scatter_weight_mode=scatter_weight_mode,
         scatter_sample_size=scatter_sample_size,
         scatter_seed=scatter_seed,
@@ -795,14 +780,12 @@ def _common_xy_plot(
     path: Optional[str],
     showXhist: bool = True,
     showYhist: bool = True,
-    envelope: bool = True,
-    envelope_method: Literal["edgeworth", "pearson", "maxent"] = "edgeworth",
     scatter_weight_mode: ScatterWeightMode = "auto",
     scatter_sample_size: Optional[int] = None,
     scatter_seed: Optional[int] = 12345,
     scatter_threshold: float = 0.0,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
-    """Build core XY figure with central scatter/hist2d and optional 1D marginals/envelopes."""
+    """Build core XY figure with central scatter/hist2d and optional 1D marginals."""
 
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -875,9 +858,6 @@ def _common_xy_plot(
         ax_histx.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histx.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
         ax_histx.set_ylabel(_weight_axis_label(w_weighted), fontsize='medium')
-        if envelope:
-            _overlay_envelope_on_hist(ax_histx, x_weighted, x_range, nb_of_bins[0],
-                                    weights=w_weighted, horizontal=False, method=envelope_method)
 
     if showYhist:
         ax_histy = fig.add_axes(rect_histy, sharey=ax_image)
@@ -894,9 +874,6 @@ def _common_xy_plot(
         ax_histy.grid(which='major', linestyle='--', linewidth=0.3, color='dimgrey')
         ax_histy.grid(which='minor', linestyle='--', linewidth=0.3, color='lightgrey')
         ax_histy.set_xlabel(_weight_axis_label(w_weighted), fontsize='medium')
-        if envelope:
-            _overlay_envelope_on_hist(ax_histy, y_weighted, y_range, nb_of_bins[1],
-                                    weights=w_weighted, horizontal=True, method=envelope_method)
 
     if mode == 'scatter':
         s, edgecolors, marker, linewidths = 2.5, 'face', '.', 1
@@ -1225,45 +1202,6 @@ def _color_palette(color: Optional[int]) -> Union[Tuple[float, float, float], Co
     if color == 4: return cm.magma
     if color == 5: return cm.terrain
     return cm.viridis
-
-def _overlay_envelope_on_hist(ax, data, rng, nbins, *, weights=None, horizontal=False,
-                              method="edgeworth", color="darkred"):
-    """Overlay a moment-matched PDF envelope onto a 1D histogram drawn in counts.
-
-    We compute moments from samples, build a PDF on a fine axis, then scale by N*bin_width
-    so the curve sits in 'counts' space.
-    """
-    d = np.asarray(data, dtype=float)
-    w = _sanitize_weights(weights, d.shape)
-
-    valid = np.isfinite(d) & np.isfinite(w) & (w > 0.0)
-    d = d[valid]
-    w = w[valid]
-    if d.size < 2:
-        return
-
-    mu, sig, skew, kurt = stats.calc_moments_from_particle_distribution(d, weights=w)
-    if not (np.isfinite(mu) and np.isfinite(sig) and sig > 0):
-        return
-
-    xmin, xmax = rng
-    lo = max(xmin, mu - 6*sig)
-    hi = min(xmax, mu + 6*sig)
-    axis = np.linspace(lo, hi, 1024)
-
-    env = stats.calc_envelope_from_moments(
-        mean=mu, std=sig, skewness=skew, kurtosis_excess=kurt,
-        axis=axis, method=method, clip_negative=True
-    )["envelope"]
-
-    total_weight = float(np.sum(w))
-    bin_width = (xmax - xmin) / max(2, int(nbins))
-    counts_curve = total_weight * env * bin_width
-
-    if horizontal:
-        ax.plot(counts_curve, axis, color=color, linewidth=0.5, alpha=1)
-    else:
-        ax.plot(axis, counts_curve, color=color, linewidth=0.5, alpha=1)
 
 def _make_plane_centered_edges(z: np.ndarray) -> np.ndarray:
     z = np.asarray(z, dtype=float)

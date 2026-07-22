@@ -12,7 +12,7 @@ from .compare import compare_beams
 from .io import read_beam, read_json_stats, save_beam, save_json_stats
 from .propagation import caustic, propagate
 from .sampling import beam_from_intensity, beam_from_wavefront, apply_wavefront
-from .stats import calc_envelope_from_moments, get_focal_distance, get_statistics
+from .stats import get_focal_distance, get_statistics
 from .viz import (
     plot,
     plot_beam,
@@ -49,7 +49,6 @@ __all__ = [
     "beam_from_wavefront",
     "apply_wavefront",
     # stats
-    "calc_envelope_from_moments",
     "get_focal_distance",
     "get_statistics",
     # viz
