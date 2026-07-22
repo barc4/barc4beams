@@ -26,11 +26,6 @@ Number = Union[int, float]
 RangeT = Optional[Tuple[Optional[Number], Optional[Number]]]
 BinsT  = Optional[Union[int, Tuple[int, int]]]
 ModeT  = Union[Literal["scatter", "hist2d"], str]
-ScatterWeightMode = Union[
-    Literal["auto", "none", "resample", "color", "alpha", "threshold"],
-    str,
-]
-
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -116,7 +111,7 @@ def plot_beam(
     *,
     mode: str = "scatter",
     aspect_ratio: bool = True,
-    color = 1,
+    cmap: Union[str, Colormap] = "viridis",
     x_range = None,
     y_range = None,
     bins = None,
@@ -126,15 +121,10 @@ def plot_beam(
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
-    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
     z_offset: float = 0.0,
-    scatter_weight_mode: ScatterWeightMode = "auto",
-    scatter_sample_size: Optional[int] = None,
-    scatter_seed: Optional[int] = 12345,
-    scatter_threshold: float = 0.0,
 ):
     """
     Plot the spatial footprint of a standardized beam (X vs Y), with optional marginals.
@@ -148,8 +138,8 @@ def plot_beam(
         Plot style. Aliases like 's'/'h' are accepted and normalized.
     aspect_ratio : bool, default True
         If True, main axes uses equal aspect.
-    color : int or None, default 1
-        Legacy color scheme index. 0/None → monochrome points; 1..4 → colormaps.
+    cmap : str or matplotlib.colors.Colormap, default 'viridis'
+        Colormap used for the intensity-weighted density.
     x_range, y_range : (min, max) or None
         Data limits. If None/partial, auto-detected with a small padding.
     bins : int or (x_bins, y_bins) or None
@@ -181,20 +171,15 @@ def plot_beam(
         df,
         kind="size",
         z_offset=z_offset,
-        weight_by_intensity=weight_by_intensity,
     )
 
     if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
         bins = _auto_bins_from_trimmed_weights(weights)
 
     fig, axes = _common_xy_plot(
-        x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+        x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, cmap,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
         showXhist, showYhist,
-        scatter_weight_mode=scatter_weight_mode,
-        scatter_sample_size=scatter_sample_size,
-        scatter_seed=scatter_seed,
-        scatter_threshold=scatter_threshold,
     )
     if plot:
         plt.show()
@@ -206,7 +191,7 @@ def plot_divergence(
     *,
     mode: str = "scatter",
     aspect_ratio: bool = False,
-    color = 2,
+    cmap: Union[str, Colormap] = "plasma",
     x_range = None,
     y_range = None,
     bins = None,
@@ -216,15 +201,10 @@ def plot_divergence(
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
-    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
     z_offset: float = 0.0,
-    scatter_weight_mode: ScatterWeightMode = "auto",
-    scatter_sample_size: Optional[int] = None,
-    scatter_seed: Optional[int] = 12345,
-    scatter_threshold: float = 0.0,
 ):
     """
     Plot the beam divergence (dX vs dY) in µrad with optional marginals.
@@ -241,20 +221,15 @@ def plot_divergence(
         df,
         kind="div",
         z_offset=0,
-        weight_by_intensity=weight_by_intensity,
     )
 
     if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
         bins = _auto_bins_from_trimmed_weights(weights)
 
     fig, axes = _common_xy_plot(
-        x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+        x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, cmap,
         x_range, y_range, bins, bin_width, bin_method, dpi, path,
         showXhist, showYhist,
-        scatter_weight_mode=scatter_weight_mode,
-        scatter_sample_size=scatter_sample_size,
-        scatter_seed=scatter_seed,
-        scatter_threshold=scatter_threshold,
     )
     if plot:
         plt.show()
@@ -266,7 +241,7 @@ def plot_phase_space(
     direction: str = "both",
     mode: str = "scatter",
     aspect_ratio: bool = False,
-    color = 3,
+    cmap: Union[str, Colormap] = "turbo",
     x_range = None,
     y_range = None,
     bins = None,
@@ -276,15 +251,10 @@ def plot_phase_space(
     path: Optional[str] = None,
     showXhist=True,
     showYhist=True,
-    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
     z_offset: float = 0.0,
-    scatter_weight_mode: ScatterWeightMode = "auto",
-    scatter_sample_size: Optional[int] = None,
-    scatter_seed: Optional[int] = 12345,
-    scatter_threshold: float = 0.0,
 ):
     """
     Plot phase space for one or both planes: (X vs dX) and/or (Y vs dY), in µm/µrad.
@@ -316,7 +286,6 @@ def plot_phase_space(
             kind="ps",
             direction=d,
             z_offset=z_offset,
-            weight_by_intensity=weight_by_intensity,
         )
 
         bins_local = bins
@@ -324,13 +293,9 @@ def plot_phase_space(
             bins_local = _auto_bins_from_trimmed_weights(weights)
 
         return _common_xy_plot(
-            x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, color,
+            x, y, weights, xl, yl, _resolve_mode(mode), aspect_ratio, cmap,
             x_range, y_range, bins_local, bin_width, bin_method, dpi, save_path,
             showXhist, showYhist,
-            scatter_weight_mode=scatter_weight_mode,
-            scatter_sample_size=scatter_sample_size,
-            scatter_seed=scatter_seed,
-            scatter_threshold=scatter_threshold,
         )
 
     if dnorm == "both":
@@ -652,7 +617,7 @@ def plot_energy_vs_intensity(
     *,
     mode: str = "scatter",
     aspect_ratio: bool = False,
-    color: Optional[int] = 3,
+    cmap: Union[str, Colormap] = "turbo",
     x_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
     y_range: Optional[Tuple[Optional[Number], Optional[Number]]] = None,
     bins: BinsT = None,
@@ -662,14 +627,9 @@ def plot_energy_vs_intensity(
     path: Optional[str] = None,
     showXhist: bool = True,
     showYhist: bool = True,
-    weight_by_intensity: bool = True,
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
-    scatter_weight_mode: ScatterWeightMode = "auto",
-    scatter_sample_size: Optional[int] = None,
-    scatter_seed: Optional[int] = 12345,
-    scatter_threshold: float = 0.0,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
     """2D plot with X=energy [eV], Y=Intensity [arb], with optional marginals; never silently shows."""
     if apply_style:
@@ -682,7 +642,7 @@ def plot_energy_vs_intensity(
     xl = r"energy [eV]"
     yl = r"$I$ [arb]"
 
-    weights = _beam_weights(df2, weight_by_intensity=weight_by_intensity)
+    weights = _beam_weights(df2)
     if _is_polychromatic(df2) and bin_method == 0 and bin_width is None and bins is None:
         bins = _auto_bins_from_trimmed_weights(weights)
 
@@ -690,7 +650,7 @@ def plot_energy_vs_intensity(
         x, y, weights, xl, yl,
         mode=_resolve_mode(mode),
         aspect_ratio=aspect_ratio,
-        color=color,
+        cmap=cmap,
         x_range=x_range,
         y_range=y_range,
         bins=bins,
@@ -700,10 +660,6 @@ def plot_energy_vs_intensity(
         path=path,
         showXhist=showXhist,
         showYhist=showYhist,
-        scatter_weight_mode=scatter_weight_mode,
-        scatter_sample_size=scatter_sample_size,
-        scatter_seed=scatter_seed,
-        scatter_threshold=scatter_threshold,
     )
     if plot:
         plt.show()
@@ -770,7 +726,7 @@ def _common_xy_plot(
     y_label: str,
     mode: ModeT,
     aspect_ratio: bool,
-    color: Optional[int],
+    cmap: Union[str, Colormap],
     x_range: RangeT,
     y_range: RangeT,
     bins: BinsT,
@@ -780,10 +736,6 @@ def _common_xy_plot(
     path: Optional[str],
     showXhist: bool = True,
     showYhist: bool = True,
-    scatter_weight_mode: ScatterWeightMode = "auto",
-    scatter_sample_size: Optional[int] = None,
-    scatter_seed: Optional[int] = 12345,
-    scatter_threshold: float = 0.0,
 ) -> Tuple[plt.Figure, Tuple[plt.Axes, Optional[plt.Axes], Optional[plt.Axes]]]:
     """Build core XY figure with central scatter/hist2d and optional 1D marginals."""
 
@@ -877,86 +829,21 @@ def _common_xy_plot(
 
     if mode == 'scatter':
         s, edgecolors, marker, linewidths = 2.5, 'face', '.', 1
-
-        scatter_mode = _resolve_scatter_weight_mode(scatter_weight_mode, weights)
-
-        xs, ys, ws = _scatter_arrays_from_weights(
-            x=x,
-            y=y,
-            weights=weights,
-            mode=scatter_mode,
-            sample_size=scatter_sample_size,
-            seed=scatter_seed,
-            threshold=scatter_threshold,
-        )
-
-        if xs.size == 0:
+        if x_weighted.size == 0:
             im = ax_image.scatter([], [])
-            
-        elif scatter_mode == "color":
-            idx = np.argsort(ws)
-            xs = xs[idx]
-            ys = ys[idx]
-            ws = ws[idx]
-
-            cmap = _color_palette(color or 1)
-            im = ax_image.scatter(
-                xs, ys,
-                c=ws,
-                cmap=cmap,
-                vmin=0.0,
-                vmax=1.0,
-                edgecolors=edgecolors,
-                s=s,
-                marker=marker,
-                linewidths=linewidths,
-            )
-
-        elif scatter_mode == "alpha":
-            if color is None or color == 0:
-                rgba = np.tile(np.array([[0.0, 0.0, 0.0, 1.0]]), (xs.size, 1))
-            else:
-                xy = np.vstack([xs, ys])
-                z = gaussian_kde(xy)(xy)
-                z = z / z.max()
-                rgba = _color_palette(color)(z)
-
-            rgba[:, -1] = ws
-            im = ax_image.scatter(
-                xs, ys,
-                color=rgba,
-                edgecolors=edgecolors,
-                s=s,
-                marker=marker,
-                linewidths=linewidths,
-            )
-
         else:
-            if color is None or color == 0:
-                im = ax_image.scatter(
-                    xs, ys,
-                    color=_color_palette(0),
-                    alpha=1,
-                    edgecolors=edgecolors,
-                    s=s,
-                    marker=marker,
-                    linewidths=linewidths,
-                )
-            else:
-                xy = np.vstack([xs, ys])
-                z = gaussian_kde(xy)(xy)
-                z = z / z.max()
-                cmap = _color_palette(color)
-                clr = cmap(z)
-                im = ax_image.scatter(
-                    xs, ys,
-                    color=clr,
-                    alpha=1,
-                    edgecolors=edgecolors,
-                    s=s,
-                    marker=marker,
-                    linewidths=linewidths,
-                )
+            density = _weighted_kde_values(x_weighted, y_weighted, w_weighted)
+            order = np.argsort(density)
+            im = ax_image.scatter(
+                x_weighted[order],
+                y_weighted[order],
+                c=density[order],
+                cmap=cmap,
+                edgecolors=edgecolors,
+                s=s,
+                marker=marker,
+                linewidths=linewidths,
+            )
 
         ax_image.grid(linestyle='--', linewidth=0.3, color='dimgrey')
 
@@ -976,7 +863,7 @@ def _common_xy_plot(
             yedges,
             H.T,
             shading="flat",
-            cmap=_color_palette(color or 2),
+            cmap=cmap,
         )
     else:
         raise ValueError("mode must be 'scatter' or 'hist2d'.")
@@ -999,7 +886,6 @@ def _prep_beam_xy(
     kind: str,
     direction: Optional[str] = None,
     z_offset: float = 0.0,
-    weight_by_intensity: bool = True,
 ):
     """Return (x, y, weights, x_label, y_label) arrays, filtering alive rays."""
 
@@ -1007,7 +893,7 @@ def _prep_beam_xy(
     if "lost_ray_flag" in df.columns:
         df = df.loc[df["lost_ray_flag"] == 0]
 
-    weights = _beam_weights(df, weight_by_intensity=weight_by_intensity)
+    weights = _beam_weights(df)
 
     if kind == "div":
         x = df["dX"].to_numpy(dtype=float) * 1e6
@@ -1049,21 +935,11 @@ def _beam_weights(df: pd.DataFrame, *, weight_by_intensity: bool = True) -> np.n
     """
     Return per-ray plotting weights.
 
-    If requested and available, the standardized ``intensity`` column is used.
-    Otherwise, unit weights are returned, preserving the old ray-count behavior.
+    If requested, the raw standardized ``intensity`` column is used.
+    Otherwise, unit weights are returned.
     """
-    if weight_by_intensity and "intensity" in df.columns:
-        weight = pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
-        std_weight = np.nanstd(weight)
-        mean_weight = np.nanmean(weight)
-        if np.abs(std_weight/mean_weight) >= 1e-6:
-            max_weight = np.percentile(weight, 99.99)
-            min_weight = np.percentile(weight, 00.01)
-            weight = (weight-min_weight)/(max_weight-min_weight)
-            weight = np.clip(weight, 0, 1)
-        else:
-            weight = np.ones(len(df), dtype=float)
-        return weight
+    if weight_by_intensity:
+        return pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
 
     return np.ones(len(df), dtype=float)
 
@@ -1191,6 +1067,21 @@ def _auto_bins(
 
     return bins
 
+def _weighted_kde_values(
+    x: np.ndarray,
+    y: np.ndarray,
+    weights: np.ndarray,
+) -> np.ndarray:
+    """Evaluate an intensity-weighted spatial KDE at each ray position."""
+    if x.size < 2:
+        return np.ones(x.size, dtype=float)
+
+    xy = np.vstack([x, y])
+    try:
+        return gaussian_kde(xy, weights=weights)(xy)
+    except (ValueError, np.linalg.LinAlgError):
+        return np.ones(x.size, dtype=float)
+
 def _color_palette(color: Optional[int]) -> Union[Tuple[float, float, float], Colormap]:
     """Return a single RGB for monochrome scatter or a Matplotlib colormap for density/2D hist."""
 
@@ -1228,81 +1119,3 @@ def _edges_from_span(lo: float, hi: float, *, bin_width: Optional[Number], bins:
     if bins is None:
         bins = 200
     return np.linspace(lo, hi, int(bins)+1)
-
-def _resolve_scatter_weight_mode(
-    mode: ScatterWeightMode,
-    weights: np.ndarray,
-) -> Literal["none", "resample", "color", "alpha", "threshold"]:
-    """Resolve scatter weighting mode, with auto preserving legacy behavior for unit weights."""
-    if not isinstance(mode, str):
-        warnings.warn(f"scatter_weight_mode {mode!r} not recognized. Falling back to 'auto'.")
-        mode = "auto"
-
-    m = mode.strip().lower()
-
-    valid_modes = {"auto", "none", "resample", "color", "alpha", "threshold"}
-    if m not in valid_modes:
-        warnings.warn(f"scatter_weight_mode {mode!r} not recognized. Falling back to 'auto'.")
-        m = "auto"
-
-    if m != "auto":
-        return m
-
-    w = np.asarray(weights, dtype=float)
-    finite = w[np.isfinite(w)]
-
-    if finite.size == 0 or np.allclose(finite, 1.0):
-        return "none"
-
-    return "resample"
-
-def _scatter_arrays_from_weights(
-    *,
-    x: np.ndarray,
-    y: np.ndarray,
-    weights: np.ndarray,
-    mode: Literal["none", "resample", "color", "alpha", "threshold"],
-    sample_size: Optional[int],
-    seed: Optional[int],
-    threshold: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return scatter x/y/weights according to the requested visual weighting policy."""
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    w = np.asarray(weights, dtype=float)
-
-    finite_xy = np.isfinite(x) & np.isfinite(y)
-
-    if mode == "none":
-        valid = finite_xy
-        return x[valid], y[valid], np.ones(np.count_nonzero(valid), dtype=float)
-
-    valid = finite_xy & np.isfinite(w) & (w > 0.0)
-
-    if mode == "threshold":
-        valid &= w > float(threshold)
-
-    xs = x[valid]
-    ys = y[valid]
-    ws = w[valid]
-
-    if xs.size == 0:
-        return xs, ys, ws
-
-    ws = np.clip(ws, 0.0, 1.0)
-
-    if mode != "resample":
-        return xs, ys, ws
-
-    total = np.sum(ws)
-    if not np.isfinite(total) or total <= 0.0:
-        return np.array([]), np.array([]), np.array([])
-
-    n = int(sample_size) if sample_size is not None else xs.size
-    if n <= 0:
-        return np.array([]), np.array([]), np.array([])
-
-    rng = np.random.default_rng(seed)
-    idx = rng.choice(xs.size, size=n, replace=True, p=ws / total)
-
-    return xs[idx], ys[idx], ws[idx]

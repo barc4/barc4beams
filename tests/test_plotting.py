@@ -1,6 +1,8 @@
-import numpy as np
+import inspect
+
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 import barc4beams as b4b
 
 
@@ -66,6 +68,39 @@ def test_plot_rays_default_threshold_removes_zero_intensity():
     np.testing.assert_allclose(ax.collections[0].get_offsets()[:, 0], beam.df["X"].to_numpy()[1:] * 1e6)
     np.testing.assert_allclose(ax.collections[0].get_facecolors()[:, 3], [0.55, 1.0])
     plt.close(fig)
+
+
+def test_density_scatter_uses_raw_intensity_as_kde_weights(monkeypatch):
+    beam = _make_standard_beam(3)
+    beam.df.loc[:, "intensity"] = [0.0, 0.25, 1.0]
+    captured = {}
+
+    def fake_kde(xy, *, weights):
+        captured["xy"] = xy.copy()
+        captured["weights"] = weights.copy()
+        return lambda points: np.array([2.0, 1.0])
+
+    monkeypatch.setattr(b4b.beam.viz, "gaussian_kde", fake_kde)
+
+    fig, _ = beam.plot_beam(mode="scatter", cmap="magma", plot=False)
+
+    assert captured["xy"].shape == (2, 2)
+    np.testing.assert_allclose(captured["weights"], [0.25, 1.0])
+    plt.close(fig)
+
+
+def test_density_plot_api_has_no_legacy_scatter_options():
+    for function in (
+        b4b.plot_beam,
+        b4b.plot_divergence,
+        b4b.plot_phase_space,
+        b4b.plot_energy_vs_intensity,
+    ):
+        parameters = inspect.signature(function).parameters
+        assert "color" not in parameters
+        assert "weight_by_intensity" not in parameters
+        assert not any(name.startswith("scatter_") for name in parameters)
+        assert "cmap" in parameters
 
 
 def test_plot_caustic_uses_z_range(monkeypatch):

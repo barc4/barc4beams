@@ -335,7 +335,7 @@ class Beam:
         *,
         mode: str = "hist",
         aspect_ratio: bool = True,
-        color: int = 1,
+        cmap="viridis",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: Optional[Union[int, Tuple[int, int]]] = None,
@@ -348,7 +348,6 @@ class Beam:
         apply_style: bool = True,
         k: float = 1.0,
         z_offset: float = 0.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -358,7 +357,7 @@ class Beam:
             df=self.df,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -372,7 +371,6 @@ class Beam:
             k=k,
             plot=plot,
             z_offset=z_offset,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_divergence(
@@ -380,7 +378,7 @@ class Beam:
         *,
         mode: str = "hist",
         aspect_ratio: bool = False,
-        color: int = 2,
+        cmap="plasma",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int, int] | None = None,
@@ -392,7 +390,6 @@ class Beam:
         showYhist: bool = True,
         apply_style: bool = True,
         k: float = 1.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -402,7 +399,7 @@ class Beam:
             df=self.df,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -415,7 +412,6 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_phase_space(
@@ -424,7 +420,7 @@ class Beam:
         direction: str = "both",
         mode: str = "hist",
         aspect_ratio: bool = False,
-        color: int = 3,
+        cmap="turbo",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int, int] | None = None,
@@ -437,7 +433,6 @@ class Beam:
         apply_style: bool = True,
         k: float = 1.0,
         z_offset: float = 0.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -448,7 +443,7 @@ class Beam:
             direction=direction,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -462,7 +457,6 @@ class Beam:
             k=k,
             plot=plot,
             z_offset=z_offset,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_energy(
@@ -524,7 +518,7 @@ class Beam:
         *,
         mode: str = "hist",
         aspect_ratio: bool = False,
-        color: int | None = 3,
+        cmap="turbo",
         x_range: tuple[float | None, float | None] | None = None,
         y_range: tuple[float | None, float | None] | None = None,
         bins: int | tuple[int, int] | None = None,
@@ -536,7 +530,6 @@ class Beam:
         showYhist: bool = True,
         apply_style: bool = True,
         k: float = 1.0,
-        scatter_weight_mode: str = "auto",
         plot: bool = True,
     ):
         """
@@ -546,7 +539,7 @@ class Beam:
             df=self.df,
             mode=mode,
             aspect_ratio=aspect_ratio,
-            color=color,
+            cmap=cmap,
             x_range=x_range,
             y_range=y_range,
             bins=bins,
@@ -559,7 +552,6 @@ class Beam:
             apply_style=apply_style,
             k=k,
             plot=plot,
-            scatter_weight_mode=scatter_weight_mode,
         )
 
     def plot_caustic(
