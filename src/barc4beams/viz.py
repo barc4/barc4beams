@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import rcParamsDefault
-from matplotlib.colors import Colormap
+from matplotlib.colors import Colormap, to_rgba
 from scipy.stats import gaussian_kde, moment
 
 from . import stats
@@ -39,6 +39,78 @@ ScatterWeightMode = Union[
 def plot() -> None:
     """Show all pending figures."""
     plt.show()
+
+def plot_rays(
+    df: pd.DataFrame,
+    *,
+    color="black",
+    marker=".",
+    intensity_threshold: Optional[float] = None,
+    marker_size: float = 2.5,
+    aspect_ratio: bool = True,
+    x_range: RangeT = None,
+    y_range: RangeT = None,
+    z_offset: float = 0.0,
+    dpi: int = 100,
+    path: Optional[str] = None,
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True,
+):
+    """Plot alive rays above an absolute intensity threshold as monochrome points.
+
+    Positions are displayed in micrometres.  Ray intensity is mapped directly
+    from its standard-beam range of [0, 1] to an alpha range of [0.1, 1].
+    Lost rays, non-finite rays, and rays whose intensity is less than or equal
+    to ``intensity_threshold`` are omitted.  A threshold of ``None`` means 0.
+
+    Returns
+    -------
+    fig, ax
+        The Matplotlib figure and scatter axes.
+    """
+    threshold = 0.0 if intensity_threshold is None else float(intensity_threshold)
+    if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        raise ValueError("intensity_threshold must be within [0, 1] or None")
+
+    if apply_style:
+        start_plotting(k)
+
+    alive = pd.to_numeric(df["lost_ray_flag"], errors="coerce").to_numpy(dtype=float) == 0.0
+    intensity = pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
+    x = pd.to_numeric(df["X"], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(df["Y"], errors="coerce").to_numpy(dtype=float)
+    dx = pd.to_numeric(df["dX"], errors="coerce").to_numpy(dtype=float)
+    dy = pd.to_numeric(df["dY"], errors="coerce").to_numpy(dtype=float)
+
+    if z_offset != 0.0:
+        x, y = _propagate_xy(x, y, dx, dy, float(z_offset))
+
+    keep = alive & np.isfinite(x) & np.isfinite(y) & np.isfinite(intensity)
+    keep &= intensity > threshold
+    x = x[keep] * 1e6
+    y = y[keep] * 1e6
+    intensity = intensity[keep]
+
+    rgba = np.tile(np.asarray(to_rgba(color)), (x.size, 1))
+    rgba[:, 3] = 0.1 + 0.9 * intensity
+
+    fig, ax = plt.subplots(dpi=int(dpi))
+    ax.scatter(x, y, color=rgba, marker=marker, s=float(marker_size))
+    ax.set_xlabel(r"$x$ [$\mu$m]")
+    ax.set_ylabel(r"$y$ [$\mu$m]")
+    ax.set_aspect("equal" if aspect_ratio else "auto")
+
+    if x_range is not None:
+        ax.set_xlim(_resolve_range(x, x_range))
+    if y_range is not None:
+        ax.set_ylim(_resolve_range(y, y_range))
+    if path is not None:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    if plot:
+        plt.show()
+
+    return fig, ax
 
 def plot_beam(
     df: pd.DataFrame,

@@ -28,11 +28,44 @@ def _make_standard_beam(n: int = 500) -> b4b.Beam:
 def test_plots_run():
     beam = _make_standard_beam()
 
+    beam.plot_rays(plot=False)
     beam.plot_beam(plot=False)
     beam.plot_divergence(plot=False)
     beam.plot_phase_space(plot=False)
 
     plt.close("all")
+
+
+def test_plot_rays_filters_and_maps_absolute_intensity_to_alpha():
+    beam = _make_standard_beam(4)
+    beam.df.loc[:, "X"] = [0.0, 1e-6, 2e-6, 3e-6]
+    beam.df.loc[:, "Y"] = [0.0, 1e-6, 2e-6, 3e-6]
+    beam.df.loc[:, "intensity"] = [0.0, 0.2, 0.5, 1.0]
+    beam.df.loc[:, "lost_ray_flag"] = [0.0, 0.0, 1.0, 0.0]
+
+    fig, ax = beam.plot_rays(
+        intensity_threshold=0.2,
+        color="red",
+        marker="x",
+        plot=False,
+    )
+
+    collection = ax.collections[0]
+    np.testing.assert_allclose(collection.get_offsets(), [[3.0, 3.0]])
+    np.testing.assert_allclose(collection.get_facecolors(), [[1.0, 0.0, 0.0, 1.0]])
+    assert collection.get_paths()[0].vertices.shape[0] > 1
+    plt.close(fig)
+
+
+def test_plot_rays_default_threshold_removes_zero_intensity():
+    beam = _make_standard_beam(3)
+    beam.df.loc[:, "intensity"] = [0.0, 0.5, 1.0]
+
+    fig, ax = beam.plot_rays(plot=False)
+
+    np.testing.assert_allclose(ax.collections[0].get_offsets()[:, 0], beam.df["X"].to_numpy()[1:] * 1e6)
+    np.testing.assert_allclose(ax.collections[0].get_facecolors()[:, 3], [0.55, 1.0])
+    plt.close(fig)
 
 
 def test_plot_caustic_uses_z_range(monkeypatch):
