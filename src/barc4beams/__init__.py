@@ -23,6 +23,7 @@ from .viz import (
     plot_intensity,
     plot_phase_space,
     plot_rays,
+    plot_rays_divergence,
 )
 from .wave import get_wave_metrics
 
@@ -61,6 +62,7 @@ __all__ = [
     "plot_intensity",
     "plot_phase_space",
     "plot_rays",
+    "plot_rays_divergence",
     # wave
     "get_wave_metrics",
 ]

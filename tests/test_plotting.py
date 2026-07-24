@@ -31,6 +31,7 @@ def test_plots_run():
     beam = _make_standard_beam()
 
     beam.plot_rays(plot=False)
+    beam.plot_rays_divergence(plot=False)
     beam.plot_beam(plot=False)
     beam.plot_divergence(plot=False)
     beam.plot_phase_space(plot=False)
@@ -70,6 +71,26 @@ def test_plot_rays_default_threshold_removes_zero_intensity():
     plt.close(fig)
 
 
+def test_plot_rays_divergence_filters_and_maps_absolute_intensity_to_alpha():
+    beam = _make_standard_beam(4)
+    beam.df.loc[:, "dX"] = [0.0, 1e-6, 2e-6, 3e-6]
+    beam.df.loc[:, "dY"] = [0.0, -1e-6, -2e-6, -3e-6]
+    beam.df.loc[:, "intensity"] = [0.0, 0.2, 0.5, 1.0]
+    beam.df.loc[:, "lost_ray_flag"] = [0.0, 0.0, 1.0, 0.0]
+
+    fig, ax = beam.plot_rays_divergence(
+        intensity_threshold=0.2,
+        plot=False,
+    )
+
+    collection = ax.collections[0]
+    np.testing.assert_allclose(collection.get_offsets(), [[3.0, -3.0]])
+    np.testing.assert_allclose(collection.get_facecolors(), [[0.0, 0.0, 0.0, 1.0]])
+    assert ax.get_xlabel() == r"$x'$ [$\mu$rad]"
+    assert ax.get_ylabel() == r"$y'$ [$\mu$rad]"
+    plt.close(fig)
+
+
 def test_density_scatter_uses_raw_intensity_as_kde_weights(monkeypatch):
     beam = _make_standard_beam(3)
     beam.df.loc[:, "intensity"] = [0.0, 0.25, 1.0]
@@ -101,6 +122,14 @@ def test_density_plot_api_has_no_legacy_scatter_options():
         assert "weight_by_intensity" not in parameters
         assert not any(name.startswith("scatter_") for name in parameters)
         assert "cmap" in parameters
+
+
+def test_divergence_plot_apis_do_not_expose_z_offset():
+    assert "z_offset" in inspect.signature(b4b.plot_rays).parameters
+    assert "z_offset" not in inspect.signature(b4b.plot_rays_divergence).parameters
+    assert "z_offset" not in inspect.signature(b4b.plot_divergence).parameters
+    assert "z_offset" not in inspect.signature(b4b.Beam.plot_rays_divergence).parameters
+    assert "z_offset" not in inspect.signature(b4b.Beam.plot_divergence).parameters
 
 
 def test_plot_caustic_uses_z_range(monkeypatch):

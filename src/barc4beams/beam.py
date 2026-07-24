@@ -330,6 +330,39 @@ class Beam:
             plot=plot,
         )
 
+    def plot_rays_divergence(
+        self,
+        *,
+        color="black",
+        marker=".",
+        intensity_threshold: float | None = None,
+        marker_size: float = 2.5,
+        aspect_ratio: bool = True,
+        x_range: tuple[float | None, float | None] | None = None,
+        y_range: tuple[float | None, float | None] | None = None,
+        dpi: int = 100,
+        path: str | None = None,
+        apply_style: bool = True,
+        k: float = 1.0,
+        plot: bool = True,
+    ):
+        """Plot alive ray divergences above an absolute intensity threshold."""
+        return viz.plot_rays_divergence(
+            df=self.df,
+            color=color,
+            marker=marker,
+            intensity_threshold=intensity_threshold,
+            marker_size=marker_size,
+            aspect_ratio=aspect_ratio,
+            x_range=x_range,
+            y_range=y_range,
+            dpi=dpi,
+            path=path,
+            apply_style=apply_style,
+            k=k,
+            plot=plot,
+        )
+
     def plot_beam(
         self,
         *,
