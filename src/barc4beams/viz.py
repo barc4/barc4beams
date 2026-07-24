@@ -106,6 +106,72 @@ def plot_rays(
 
     return fig, ax
 
+def plot_rays_divergence(
+    df: pd.DataFrame,
+    *,
+    color="black",
+    marker=".",
+    intensity_threshold: Optional[float] = None,
+    marker_size: float = 2.5,
+    aspect_ratio: bool = True,
+    x_range: RangeT = None,
+    y_range: RangeT = None,
+    dpi: int = 100,
+    path: Optional[str] = None,
+    apply_style: bool = True,
+    k: float = 1.0,
+    plot: bool = True,
+):
+    """Plot alive ray divergences above an absolute intensity threshold.
+
+    Divergences are displayed in microradians. Ray intensity is mapped directly
+    from its standard-beam range of [0, 1] to an alpha range of [0.1, 1].
+    Lost rays, non-finite rays, and rays whose intensity is less than or equal
+    to ``intensity_threshold`` are omitted. A threshold of ``None`` means 0.
+
+    Returns
+    -------
+    fig, ax
+        The Matplotlib figure and scatter axes.
+    """
+    threshold = 0.0 if intensity_threshold is None else float(intensity_threshold)
+    if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        raise ValueError("intensity_threshold must be within [0, 1] or None")
+
+    if apply_style:
+        start_plotting(k)
+
+    alive = pd.to_numeric(df["lost_ray_flag"], errors="coerce").to_numpy(dtype=float) == 0.0
+    intensity = pd.to_numeric(df["intensity"], errors="coerce").to_numpy(dtype=float)
+    dx = pd.to_numeric(df["dX"], errors="coerce").to_numpy(dtype=float)
+    dy = pd.to_numeric(df["dY"], errors="coerce").to_numpy(dtype=float)
+
+    keep = alive & np.isfinite(dx) & np.isfinite(dy) & np.isfinite(intensity)
+    keep &= intensity > threshold
+    dx = dx[keep] * 1e6
+    dy = dy[keep] * 1e6
+    intensity = intensity[keep]
+
+    rgba = np.tile(np.asarray(to_rgba(color)), (dx.size, 1))
+    rgba[:, 3] = 0.1 + 0.9 * intensity
+
+    fig, ax = plt.subplots(dpi=int(dpi))
+    ax.scatter(dx, dy, color=rgba, marker=marker, s=float(marker_size))
+    ax.set_xlabel(r"$x'$ [$\mu$rad]")
+    ax.set_ylabel(r"$y'$ [$\mu$rad]")
+    ax.set_aspect("equal" if aspect_ratio else "auto")
+
+    if x_range is not None:
+        ax.set_xlim(_resolve_range(dx, x_range))
+    if y_range is not None:
+        ax.set_ylim(_resolve_range(dy, y_range))
+    if path is not None:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    if plot:
+        plt.show()
+
+    return fig, ax
+
 def plot_beam(
     df: pd.DataFrame,
     *,
@@ -204,7 +270,6 @@ def plot_divergence(
     apply_style: bool = True,
     k: float = 1.0,
     plot: bool = True,
-    z_offset: float = 0.0,
 ):
     """
     Plot the beam divergence (dX vs dY) in µrad with optional marginals.
@@ -220,7 +285,6 @@ def plot_divergence(
     x, y, weights, xl, yl = _prep_beam_xy(
         df,
         kind="div",
-        z_offset=0,
     )
 
     if _is_polychromatic(df) and bin_method == 0 and bin_width is None and bins is None:
